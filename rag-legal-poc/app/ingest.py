@@ -1,3 +1,4 @@
+# app/ingest.py
 from __future__ import annotations
 from typing import List
 from pathlib import Path
@@ -51,7 +52,7 @@ def _build_chunks(text: str) -> List[str]:
 
 def _load_text_from_path(path: Path) -> str:
     if path.suffix.lower() == ".pdf":
-        txt = pdf_to_text(path)
+        txt = pdf_to_text(path)   # ← OCR/هوک شما
     else:
         txt = path.read_text("utf-8", errors="ignore")
     txt = normalize_persian(txt)
@@ -60,6 +61,7 @@ def _load_text_from_path(path: Path) -> str:
 def ingest_file(store: Store, file_path: Path, title: str = None) -> int:
     full_text = _load_text_from_path(file_path)
     chunks = _build_chunks(full_text)
+    # ← استفاده از متدهای خود Store طبق پروژه شما
     doc_id = store.add_document_with_chunks(title or file_path.stem, file_path, chunks, full_text)
     store.index_doc(doc_id)
     return doc_id

@@ -47,12 +47,67 @@ class Store:
         self.index: Optional[faiss.Index] = None
         self.id_to_chunk: Dict[int, int] = {}
         self._load_faiss()
+        self._ensure_idmap()
 
         # BM25
         self.bm25: Optional[BM25Okapi] = None
         self.bm25_tokens: List[List[str]] = []
         self._load_bm25()
 
+    def add_document(self, title: str, source_path: str, meta: dict) -> int:
+        """سند جدید را در جدول documents درج می‌کند و doc_id برمی‌گرداند."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO documents (title, source_path, meta) VALUES (?,?,?)",
+            (title, source_path, json.dumps(meta, ensure_ascii=False))
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def add_chunk(self, doc_id: int, text: str, chunk_index: int) -> int:
+        """چانک جدید را درج می‌کند و chunk_id برمی‌گرداند (و FTS/BM25 را به‌روز می‌کند اگر داری)."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT INTO chunks (doc_id, chunk_index, text) VALUES (?,?,?)",
+            (doc_id, chunk_index, text)
+        )
+        chunk_id = int(cur.lastrowid)
+        # اگر FTS5 داری:
+        try:
+            cur.execute("INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)", (chunk_id, text))
+        except Exception:
+            pass
+        self.conn.commit()
+        return chunk_id
+
+    def _ensure_idmap(self):
+        import faiss
+        if self.index is None:
+            return
+        if not isinstance(self.index, faiss.IndexIDMap) and not isinstance(self.index, faiss.IndexIDMap2):
+            # wrap current index (e.g., Flat or HNSW) with IDMap
+            self.index = faiss.IndexIDMap(self.index)
+
+    def add_vector_for_chunk(self, chunk_id: int, text: str):
+        """امبدینگ بگیر و به FAISS با ID برابر chunk_id اضافه کن."""
+        self._ensure_idmap()
+        vec = self.embedder.encode([text])  # ← فرض: sentence-transformers
+        if hasattr(vec, "tolist"):  # numpy array
+            vec = np.array(vec, dtype="float32")
+        else:
+            vec = np.array(vec, dtype="float32")
+        if vec.ndim == 1:
+            vec = vec.reshape(1, -1).astype("float32")
+        ids = np.array([chunk_id], dtype="int64")
+        self.index.add_with_ids(vec, ids)
+        # ذخیره ایندکس
+        faiss.write_index(self.index, str(self.index_path))
+
+    def add_bm25_for_chunk(self, chunk_id: int, text: str):
+        """اگر موتور BM25 جدا داری، در اینجا ایندکس کن؛ اگر از FTS5 استفاده می‌کنی، add_chunk کافی بود."""
+        # اگر از Rank-BM25 در حافظه استفاده می‌کنی، باید مدل را مجدد بازسازی کنی (سنگین است).
+        # برای PoC: از FTS5 بالا استفاده می‌کنیم؛ پس این متد می‌تواند No-Op باشد.
+        return
     # ---------------------- FAISS ----------------------
     def _new_faiss(self):
         base = faiss.IndexFlatIP(self.dim)

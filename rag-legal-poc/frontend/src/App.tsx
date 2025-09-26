@@ -1,21 +1,20 @@
+// frontend/src/App.tsx
 import React, { useEffect, useState } from "react";
 import Tabs from "./components/Tabs";
 import UploadAnalyze from "./components/UploadAnalyze";
 import ChatPanel from "./components/ChatPanel";
 import HistoryPanel from "./components/HistoryPanel";
-import SettingsPanel from "./components/SettingsPanel";
+import AdminPanel from "./components/AdminPanel";
 import { Toaster } from "sonner";
 import { health } from "./api";
 
-type TabKey = "analyze" | "ask" | "history" | "settings";
+type TabKey = "analyze" | "ask" | "history" | "admin";
 
 export default function App(){
   const [tab, setTab] = useState<TabKey>("analyze");
   const [server, setServer] = useState<any>(null);
 
-  useEffect(()=>{
-    health().then(setServer).catch(()=>setServer(null));
-  },[]);
+  useEffect(()=>{ health().then(setServer).catch(()=>setServer(null)); },[]);
 
   return (
     <div className="min-h-screen">
@@ -39,11 +38,11 @@ export default function App(){
         {tab==="analyze" && <UploadAnalyze />}
         {tab==="ask" && <ChatPanel />}
         {tab==="history" && <HistoryPanel />}
-        {tab==="settings" && <SettingsPanel />}
+        {tab==="admin" && <AdminPanel />}
       </main>
 
       <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
-        ساخته‌شده برای PoC © {new Date().getFullYear()}
+        ساخته‌شده برای PoC — دقت و UX مهم است. © {new Date().getFullYear()}
       </footer>
 
       <Toaster position="top-center" richColors />

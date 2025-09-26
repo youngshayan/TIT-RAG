@@ -1,44 +1,64 @@
+# app/config.py
+from __future__ import annotations
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# --- Paths ---
+BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 FILES_DIR = DATA_DIR / "files"
 TMP_DIR = DATA_DIR / "tmp"
-for p in (DATA_DIR, FILES_DIR, TMP_DIR):
-    p.mkdir(parents=True, exist_ok=True)
+TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-load_dotenv()
-
-# -------- Chat Models via ArvanCloud (اولویت: GPT-4o-mini ، بکاپ: DeepSeek) --------
-GPT4O_API_KEY = "apikey ab87839b-8754-577b-9b9e-de68e720dbb1"
-GPT4O_ENDPOINT = "https://arvancloudai.ir/gateway/models/GPT-4o-mini/x-s_R7OXVU9yI4tPZYHgK1hnvvNWSPkIr4MtLg_RdMwCuSW94nrpPLbI_uH9RAq1ovO6-Dut4d-H4SgFI1UXaZH5sW9N74GRVzbimYwObEXq_BssQat3OCZjY9oKTa_MnWeC2Cc87rabriKxREISUqKq_6FV-bz9lSK8gK7d-rjzc6sKknQdvpQ1CniiKk6lHEjIouuCY3dfy-23VT3ot_MnfB_tIhGtNamIeHHUafrBWGj1XX3B-fi0eHI/v1/chat/completions"
-GPT4O_MODEL = "GPT-4o-mini"
-
-DEEPSEEK_API_KEY = "apikey ab87839b-8754-577b-9b9e-de68e720dbb1"
-DEEPSEEK_ENDPOINT = "https://arvancloudai.ir/gateway/models/DeepSeek-Chat-V3-0324/S-1V3ANHYEKNsdstvNRRkXauUl9hGCf-Cv57g9W0PmbI2NUGYPoJN4FCpjXLzR8MKQ4VCSII4Phloe2F5bHR1fQYdeZT4nWN3-Rh5aotSrKibMZAyvIYxHvqkWP8GhUrfCPvsDUohYpBz90lUuhRaKZALpvrtTpCNT6teuOQ6y3n2tPE1V7fuZ6QbMcRhs8-uutzvE9ibH1zr8iKSDWf65QxeOEKDVvJoN3wRToRsOG2Ulu21NJ1eIKabD-nSMehEdCG6XLN6XQKs8tpjs5b3g/v1/chat/completions"
-DEEPSEEK_MODEL = "DeepSeek-Chat-V3-0324"
-
-# -------- Embeddings / Reranker --------
-EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"  # سبک. (برای فارسی بد نیست، اگر خواستی multilingual قوی‌تر بگم)
-
-# -------- FAISS / BM25 cache paths --------
 FAISS_INDEX_PATH = DATA_DIR / "faiss.index"
 FAISS_MAP_PATH = DATA_DIR / "faiss_map.json"
-BM25_CORPUS_PATH = DATA_DIR / "bm25_corpus.json"   # توکن‌های هر چانک برای بازسازی BM25
 SQLITE_PATH = DATA_DIR / "rag.sqlite"
 
-# -------- Chunking --------
+# --- Chunking ---
 CHUNK_TOKENS = 500
 CHUNK_OVERLAP = 50
-RAG_TOP_K = 5
-BM25_K = 30
-VEC_K = 30
-MERGED_K = 12   # بعد از ادغام و ریرنک
 
-DISCLAIMER = (
-    "⚠️ این پاسخ صرفاً بر مبنای متن‌های موجود در مخزن است و "
-    "ماهیت «مشاوره حقوقی رسمی» ندارد."
-)
+DISCLAIMER = "این پاسخ صرفاً برای کمک اولیه است و جایگزین نظر قطعی مشاور حقوقی نیست."
+
+# --- load .env (optional) ---
+load_dotenv(override=True)
+
+# --- Embeddings (برای Persian مناسب) ---
+# یکی از این‌ها:
+#   "intfloat/multilingual-e5-base"
+#   "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")  # "cpu" یا "cuda"
+
+# --- Retrieval knobs ---
+VEC_K = int(os.getenv("VEC_K", "15"))
+BM25_K = int(os.getenv("BM25_K", "15"))
+
+# --- Reranker (برای app/retrieval.py) ---
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANKER_DEVICE = os.getenv("RERANKER_DEVICE", "cpu")  # "cpu" یا "cuda"
+RERANKER_ENABLE = os.getenv("RERANKER_ENABLE", "true").lower() in {"1","true","yes"}
+
+# --- Admin / Categories / Email ---
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme-admin-token")
+
+CATEGORIES = [
+    "قوانین و مقررات",
+    "آیین‌نامه‌ها",
+    "دستورالعمل‌ها",
+    "بخشنامه‌ها",
+]
+
+CATEGORY_RECIPIENTS = {
+    "قوانین و مقررات": os.getenv("CAT_RECIP_LAW", ""),
+    "آیین‌نامه‌ها": os.getenv("CAT_RECIP_BYLAW", ""),
+    "دستورالعمل‌ها": os.getenv("CAT_RECIP_GUIDE", ""),
+    "بخشنامه‌ها": os.getenv("CAT_RECIP_CIRCULAR", ""),
+}
+
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "no-reply@example.com")
