@@ -8,6 +8,9 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import BackgroundTasks
+from app.graph import build_answer_graph
+# بالای فایل اضافه کن:
+
 
 from app import config
 from app.store import Store
@@ -138,7 +141,11 @@ async def ask_endpoint(
         raise HTTPException(status_code=400, detail="Query is empty.")
 
     if store.index is None or store.index.ntotal == 0:
-        return {"answer": "در حال حاضر هیچ سندی در پایگاه وجود ندارد. ابتدا اسناد را ingest کنید.", "citations": []}
+        return {
+            "answer": "در حال حاضر هیچ سندی در پایگاه وجود ندارد. ابتدا اسناد را ingest کنید.",
+            "citations": [],
+            "graph": {"nodes": [], "edges": [], "elements": []}
+        }
 
     first_candidates = store.search_hybrid(
         query=query,
@@ -147,7 +154,10 @@ async def ask_endpoint(
     )
     reranked = _rerank_pairs(query, first_candidates, store, top_k)
     if not reranked:
-        return {"answer": "سندی مرتبط پیدا نشد.", "citations": []}
+        return {"answer": "سندی مرتبط پیدا نشد.", "citations": [], "graph": {"nodes": [], "edges": [], "elements": []}}
+
+    # --- Graph: از همین reranked استفاده می‌کنیم
+    graph_obj = build_answer_graph(query, reranked, store, top_k=top_k)
 
     context_snippets: List[str] = []
     citations: List[Dict[str, Any]] = []
@@ -201,7 +211,7 @@ async def ask_endpoint(
         "فقط با تکیه بر همین شواهد پاسخ بده."
     )
     answer = chat.chat(system=system_msg, user=user_msg)
-    return {"answer": answer, "citations": citations}
+    return {"answer": answer, "citations": citations, "graph": graph_obj}
 
 # ----------------- Helpers for admin post-actions ------------------
 def _ingest_paths_after_admin(paths: List[Path]):

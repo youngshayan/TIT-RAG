@@ -4,7 +4,7 @@ type TabKey = "analyze" | "ask" | "history" | "admin";
 
 export default function Tabs({ value, onChange }:{ value: TabKey; onChange:(k:TabKey)=>void }){
   const tabs: { key: TabKey; label: string }[] = [
-    { key: "analyze", label: "تحلیل (آپلود)" },
+    { key: "analyze", label: "تحلیل (فایل)" },
     { key: "ask", label: "پرسش" },
     { key: "history", label: "تاریخچه" },
     { key: "admin", label: "ادمین" },

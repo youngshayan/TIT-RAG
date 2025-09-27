@@ -58,7 +58,7 @@ export default function App(){
       </main>
 
       <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
-        ساخته‌شده برای PoC — دقت و UX مهم است. © {new Date().getFullYear()}
+        ساخته‌شده برایMindSol Team - PoC ©
       </footer>
 
       <Toaster position="top-center" richColors />
