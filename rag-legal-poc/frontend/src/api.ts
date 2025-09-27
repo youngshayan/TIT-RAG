@@ -11,7 +11,7 @@ export type Meta = {
 };
 
 export type ConflictItem = {
-  db_doc: { doc_id: number; title: string; source_path: string; meta: Meta; };
+  db_doc: { doc_id: number; title: string; source_path: string; meta: Meta };
   db_chunk_id: number;
   score: number;
   source_tag: string;
@@ -29,15 +29,17 @@ export type AnalyzedFile = {
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
+// ---------- Health ----------
 export async function health() {
   const r = await fetch(`${API_BASE}/`);
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 
-export async function uploadAnalyze(files: File[], perChunkCandidates=3, finalK=15) {
+// ---------- User: analyze upload ----------
+export async function uploadAnalyze(files: File[], perChunkCandidates = 3, finalK = 15) {
   const fd = new FormData();
-  files.forEach(f => fd.append("files", f));
+  files.forEach((f) => fd.append("files", f));
   fd.append("per_chunk_candidates", String(perChunkCandidates));
   fd.append("final_k", String(finalK));
   const r = await fetch(`${API_BASE}/upload`, { method: "POST", body: fd });
@@ -45,6 +47,7 @@ export async function uploadAnalyze(files: File[], perChunkCandidates=3, finalK=
   return r.json() as Promise<{ analyzed: AnalyzedFile[] }>;
 }
 
+// ---------- User: ask ----------
 export async function ask(query: string, top_k?: number, history?: ChatTurn[]) {
   const fd = new FormData();
   fd.append("query", query);
@@ -58,7 +61,7 @@ export async function ask(query: string, top_k?: number, history?: ChatTurn[]) {
   return r.json();
 }
 
-// -------- Admin --------
+// ---------- Admin ----------
 export type AdminIndexed = {
   filename: string;
   category: string;
@@ -68,16 +71,60 @@ export type AdminIndexed = {
   stored_path: string;
 };
 
-export async function adminUploadIndex(files: File[], adminToken: string, autoCategory: boolean, category?: string) {
+// (جدید) لاگین ادمین با تایید سمت سرور
+export async function adminLogin(token: string) {
+  const r = await fetch(`${API_BASE}/admin/login`, {
+    method: "POST",
+    headers: { "X-Admin-Token": token },
+  });
+  if (!r.ok) throw new Error(await r.text());
+  // می‌تونی اینجا ذخیره محلی انجام بدی تا لازم نباشه هر بار توکن بدهی:
+  localStorage.setItem("admin_token", token);
+  return r.json() as Promise<{ ok: boolean }>;
+}
+
+// (اختیاری) هدر از localStorage
+function authHeaders() {
+  const t = localStorage.getItem("admin_token");
+  return t ? { "X-Admin-Token": t } : {};
+}
+
+// استفاده با توکن پاس‌داده‌شده (سازگار با نسخه فعلی تو)
+export async function adminUploadIndex(
+  files: File[],
+  adminToken: string,
+  autoCategory: boolean,
+  category?: string
+) {
   const fd = new FormData();
-  files.forEach(f => fd.append("files", f));
+  files.forEach((f) => fd.append("files", f));
   fd.append("auto_category", String(autoCategory));
   if (!autoCategory && category) fd.append("category", category);
 
   const r = await fetch(`${API_BASE}/admin/upload_and_index`, {
     method: "POST",
     body: fd,
-    headers: { "X-Admin-Token": adminToken }
+    headers: { "X-Admin-Token": adminToken },
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json() as Promise<{ ok: boolean; indexed: AdminIndexed[] }>;
+}
+
+// (اختیاری) نسخه‌ای که توکن را از localStorage می‌گیرد
+export async function adminUploadIndexWithSavedToken(
+  files: File[],
+  autoCategory: boolean,
+  category?: string
+) {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  fd.append("auto_category", String(autoCategory));
+  if (!autoCategory && category) fd.append("category", category);
+
+  const r = await fetch(`${API_BASE}/admin/upload_and_index`, {
+    method: "POST",
+    body: fd,
+    headers: authHeaders(),
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json() as Promise<{ ok: boolean; indexed: AdminIndexed[] }>;
