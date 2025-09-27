@@ -1,13 +1,13 @@
 # app/main.py
 from __future__ import annotations
 
+import json, uuid, shutil, logging, time
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import BackgroundTasks
-from typing import List, Dict, Any, Optional
-from pathlib import Path
-import json, uuid, shutil, logging
-import time
 
 from app import config
 from app.store import Store
@@ -18,21 +18,21 @@ from app.retrieval import summarize_text, find_conflicts_against_index, _rerank_
 from app.classify import classify_category
 from app.notify import send_email
 
-# اگر بخواهیم re-embed را بعد از آپلود اجرا کنیم:
 try:
-    from reembed_all import main as reembed_all_main  # فایل در ریشه پروژه
+    from reembed_all import main as reembed_all_main  # اختیاری
 except Exception:
     reembed_all_main = None
 
 logger = logging.getLogger("rag")
 logger.setLevel(logging.INFO)
 
-app = FastAPI(title="RAG Legal PoC", version="0.6.0")
+app = FastAPI(title="RAG Legal PoC", version="0.6.1")
 
-# CORS
+# CORS — باز گذاشته شده برای تست؛ در تولید محدود کن
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # در تولید محدود کن
+    allow_origins=["*"],           # در تولید: ["http://localhost:5173", ...]
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,19 +56,33 @@ async def dispatch(request: Request, call_next):
 store = Store()
 chat = ChatClient()
 
+# ساده‌ترین هلث‌چک مخصوص فرانت
+@app.get("/health")
+def health():
+    rows = int(store.index.ntotal if store.index is not None else 0)
+    logger.info(f"[HEALTH] index_rows={rows}")
+    return {"ok": True, "index_rows": rows, "version": app.version}
+
+# مسیر روت هم می‌ماند (برای تست مستقیم با مرورگر/پستمن)
 @app.get("/")
 def root():
     rows = int(store.index.ntotal if store.index is not None else 0)
-    logger.info(f"[HEALTH] index_rows={rows}")
-    return {"ok": True, "message": "RAG Legal PoC is running", "index_rows": rows}
+    logger.info(f"[ROOT] index_rows={rows}")
+    return {"ok": True, "message": "RAG Legal PoC is running", "index_rows": rows, "version": app.version}
 
 # ----------------- End-User: Upload (Analyze only) -----------------
 @app.post("/upload")
 async def upload_and_analyze(
     files: List[UploadFile] = File(...),
-    per_chunk_candidates: int = Form(3),
-    final_k: int = Form(15)
+    per_chunk_candidates: int = Form(None),
+    final_k: int = Form(None)
 ):
+    # اگر فرانت مقدار نداد از config بخوان
+    if per_chunk_candidates is None:
+        per_chunk_candidates = int(getattr(config, "PER_CHUNK_CANDIDATES", 2))
+    if final_k is None:
+        final_k = int(getattr(config, "CONFLICT_FINAL_K", 6))
+
     logger.info(f"[UPLOAD] received {len(files)} file(s); per_chunk={per_chunk_candidates}, final_k={final_k}")
     results: List[Dict[str, Any]] = []
     for uf in files:
@@ -89,8 +103,7 @@ async def upload_and_analyze(
             summary_md = summarize_text(chat, text, meta)
             logger.info(f"[UPLOAD] summary_done in {(time.time()-t0)*1000:.1f} ms for {uf.filename}")
 
-            # uploaded_chunks باید list[str] باشد
-            uploaded_list = [{"text": c} for c in chunks]  # سازگار با retrieval
+            uploaded_list = [{"text": c} for c in chunks]  # برای فیکس تایپ
             conflicts = find_conflicts_against_index(
                 store=store,
                 chatter=chat,
@@ -192,12 +205,7 @@ async def ask_endpoint(
 
 # ----------------- Helpers for admin post-actions ------------------
 def _ingest_paths_after_admin(paths: List[Path]):
-    """
-    این تابع روی همان فایل‌های جدید اجرا می‌شود تا وارد DB RAG شوند
-    (در صورتی که قبلاً add_document_with_chunks+index_doc نکرده باشیم).
-    اینجا از ingest_file استفاده می‌کنیم تا دقیقاً همان مسیر ingestion را طی کند.
-    """
-    st = Store()  # نمونه جدید برای ایزوله بودن سشن
+    st = Store()
     done = []
     for p in paths:
         try:
@@ -228,7 +236,6 @@ async def admin_upload_and_index(
     auto_category: bool = Form(True),
     category: Optional[str] = Form(None),
 ):
-    # احراز هویت ساده ادمین
     if not x_admin_token or x_admin_token != config.ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -240,28 +247,23 @@ async def admin_upload_and_index(
     new_final_paths: List[Path] = []
 
     for uf in files:
-        # 0) ذخیره موقت
         tmp_path = config.TMP_DIR / f"{uuid.uuid4().hex}__{uf.filename}"
         with open(tmp_path, "wb") as w:
             w.write(await uf.read())
         logger.info(f"[ADMIN] tmp saved: {tmp_path} (name={uf.filename})")
 
-        # 1) متن (PDF→OCR/هوک شما | TXT→مستقیم)
         text = _load_text_from_path(tmp_path)
         logger.info(f"[ADMIN] text_len={len(text)} for {uf.filename}")
 
-        # 2) متادیتا
         meta = extract_doc_meta(text) or {}
         meta["filename"] = uf.filename
 
-        # 3) دسته‌بندی: خودکار یا دستی
         if not auto_category and category:
             cat = category if category in config.CATEGORIES else config.CATEGORIES[0]
         else:
             cat = classify_category(chat, text, meta)
         logger.info(f"[ADMIN] category={cat}")
 
-        # 4) انتقال فایل به data/files/<cat>/
         cat_dir = base_dir / cat
         cat_dir.mkdir(parents=True, exist_ok=True)
         final_path = cat_dir / uf.filename
@@ -274,7 +276,6 @@ async def admin_upload_and_index(
         logger.info(f"[ADMIN] stored at: {final_path}")
         new_final_paths.append(final_path)
 
-        # 5) ایندکس سریع همان لحظه (بدون ingest_folder) تا قابل جستجو باشد
         if config.ADMIN_INLINE_INDEX:
             chunks = _build_chunks(text)
             title = meta.get("title") or meta.get("number") or uf.filename
@@ -282,7 +283,6 @@ async def admin_upload_and_index(
             store.index_doc(doc_id)
             logger.info(f"[ADMIN] inline-indexed doc_id={doc_id} with {len(chunks)} chunks")
 
-        # 6) ایمیل نوتیف
         recips_raw = config.CATEGORY_RECIPIENTS.get(cat, "")
         recipients = [e.strip() for e in recips_raw.split(",") if e.strip()]
         subject = f"«{cat}» - سند جدید: {uf.filename}"
@@ -304,35 +304,35 @@ async def admin_upload_and_index(
             "stored_path": str(final_path)
         })
 
-    # --- اجرای خودکار ingest_file روی همین فایل‌های جدید (در صورت غیرفعال بودن inline) ---
     if config.RUN_INGEST_FOR_NEW_FILES and not config.ADMIN_INLINE_INDEX:
-        # برای اینکه پاسخ سریع برگردد، می‌فرستیم پس‌زمینه:
         background.add_task(_ingest_paths_after_admin, new_final_paths)
 
-    # --- اجرای خودکار re-embed (کل ایندکس) در پس‌زمینه، اگر فعال باشد ---
     if config.RUN_REEMBED_AFTER_ADMIN:
         background.add_task(_run_reembed_background)
 
     return {"ok": True, "indexed": out}
 
-# ----------------- (اختیاری) اندپوینت‌های ادمین برای تریگر دستی ----
+# ---------- (اختیاری) اندپوینت‌های ادمین برای تریگر دستی ----
 @app.post("/admin/reembed")
 def admin_reembed(x_admin_token: str = Header(None)):
     if not x_admin_token or x_admin_token != config.ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
     if reembed_all_main is None:
         raise HTTPException(status_code=500, detail="reembed_all.main not found")
+    logger.info("[ADMIN][REEMBED] manual trigger started...")
     reembed_all_main()
+    logger.info("[ADMIN][REEMBED] manual trigger finished.")
     return {"ok": True}
 
 @app.post("/admin/ingest_folder")
 def admin_ingest_folder(x_admin_token: str = Header(None)):
     if not x_admin_token or x_admin_token != config.ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    # اجرای همان اسکریپت ingest_folder به‌صورت برنامه‌وار
     try:
         from ingest_folder import main as ingest_folder_main
     except Exception:
         raise HTTPException(status_code=500, detail="ingest_folder.py not found")
+    logger.info("[ADMIN][INGEST_FOLDER] manual trigger started...")
     ingest_folder_main()
+    logger.info("[ADMIN][INGEST_FOLDER] manual trigger finished.")
     return {"ok": True}

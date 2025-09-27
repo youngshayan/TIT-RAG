@@ -112,8 +112,8 @@ class Store:
 
     def _load_bm25(self):
         try:
-            if config.Bm25_CORPUS_PATH.exists():
-                data = json.loads(config.Bm25_CORPUS_PATH.read_text("utf-8"))
+            if config.BM25_CORPUS_PATH.exists():
+                data = json.loads(config.BM25_CORPUS_PATH.read_text("utf-8"))
                 self.bm25_tokens = data.get("tokens", [])
                 if self.bm25_tokens:
                     self.bm25 = BM25Okapi(self.bm25_tokens)
@@ -125,11 +125,10 @@ class Store:
             self.bm25 = None
 
     def _save_bm25(self):
-        config.Bm25_CORPUS_PATH.write_text(
+        config.BM25_CORPUS_PATH.write_text(
             json.dumps({"tokens": self.bm25_tokens}, ensure_ascii=False),
             encoding="utf-8"
         )
-
     def _reset_bm25(self):
         self.bm25_tokens = []
         self.bm25 = None

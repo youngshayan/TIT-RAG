@@ -1,4 +1,3 @@
-// frontend/src/App.tsx
 import React, { useEffect, useState } from "react";
 import Tabs from "./components/Tabs";
 import UploadAnalyze from "./components/UploadAnalyze";
@@ -6,15 +5,29 @@ import ChatPanel from "./components/ChatPanel";
 import HistoryPanel from "./components/HistoryPanel";
 import AdminPanel from "./components/AdminPanel";
 import { Toaster } from "sonner";
-import { health } from "./api";
+import { health, API_BASE } from "./api";
 
 type TabKey = "analyze" | "ask" | "history" | "admin";
 
 export default function App(){
   const [tab, setTab] = useState<TabKey>("analyze");
   const [server, setServer] = useState<any>(null);
+  const [serverErr, setServerErr] = useState<string | null>(null);
 
-  useEffect(()=>{ health().then(setServer).catch(()=>setServer(null)); },[]);
+  useEffect(()=>{
+    (async ()=>{
+      try {
+        const h = await health();
+        setServer(h);
+        setServerErr(null);
+        console.log("[health ok]", h);
+      } catch (e: any) {
+        console.error("[health error]", e);
+        setServer(null);
+        setServerErr(String(e?.message || e));
+      }
+    })();
+  },[]);
 
   return (
     <div className="min-h-screen">
@@ -27,8 +40,11 @@ export default function App(){
               <div className="text-xs text-slate-500">بانکی | فارسی | PoC</div>
             </div>
           </div>
-          <div className="text-xs text-slate-500 hidden sm:block">
-            {server ? <>Index Rows: <b>{server.index_rows}</b></> : "Server: n/a"}
+          <div className="text-xs text-slate-500 hidden sm:flex flex-col items-end">
+            <div>API: <b>{API_BASE}</b></div>
+            {server
+              ? <div>Server: <b>{server.index_rows}</b> rows</div>
+              : <div>Server: <b>n/a</b> {serverErr ? <span className="text-red-500">({serverErr})</span> : null}</div>}
           </div>
         </div>
       </header>
