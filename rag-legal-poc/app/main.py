@@ -128,6 +128,7 @@ async def upload_and_analyze(
     return {"analyzed": results}
 
 # ----------------- End-User: Ask (with short history) --------------
+# ----------------- End-User: Ask (with short history) --------------
 @app.post("/ask")
 async def ask_endpoint(
     query: str = Form(...),
@@ -137,54 +138,88 @@ async def ask_endpoint(
     qlog = (query or "")[:80].replace("\n", " ")
     logger.info(f"[ASK] query='{qlog}...' top_k={top_k}")
 
+    # مقدار پیش‌فرض تا هرگز UnboundLocal نشود
+    answer: str = "نتوانستم پاسخ تولید کنم. لطفاً دوباره تلاش کنید یا پرسش را دقیق‌تر بیان کنید."
+    citations: List[Dict[str, Any]] = []
+    graph: Dict[str, Any] = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
+
     if not query or not query.strip():
         raise HTTPException(status_code=400, detail="Query is empty.")
 
+    # اگر ایندکس خالی است، پاسخ و گراف حداقلی برگردان
     if store.index is None or store.index.ntotal == 0:
+        try:
+            graph = build_answer_graph(query, [], store, top_k=0)
+        except Exception as ge:
+            logger.warning(f"[ASK][GRAPH] build failed on empty index: {ge}")
         return {
             "answer": "در حال حاضر هیچ سندی در پایگاه وجود ندارد. ابتدا اسناد را ingest کنید.",
             "citations": [],
-            "graph": {"nodes": [], "edges": [], "elements": []}
+            "graph": graph,
         }
 
-    first_candidates = store.search_hybrid(
-        query=query,
-        vec_k=max(top_k * 3, config.VEC_K),
-        bm25_k=max(top_k * 3, config.BM25_K)
-    )
-    reranked = _rerank_pairs(query, first_candidates, store, top_k)
-    if not reranked:
-        return {"answer": "سندی مرتبط پیدا نشد.", "citations": [], "graph": {"nodes": [], "edges": [], "elements": []}}
-
-    # --- Graph: از همین reranked استفاده می‌کنیم
-    graph_obj = build_answer_graph(query, reranked, store, top_k=top_k)
-
-    context_snippets: List[str] = []
-    citations: List[Dict[str, Any]] = []
-    used_doc_ids: set[int] = set()
-
-    for cid, sc, tag in reranked[:top_k]:
-        ch = store.get_chunk(cid)
-        if not ch:
-            continue
-        doc = store.get_document(ch.doc_id)
+    # 1) گرفتن کاندیدهای اولیه و ریرنک
+    try:
+        first_candidates = store.search_hybrid(
+            query=query,
+            vec_k=max(top_k * 3, config.VEC_K),
+            bm25_k=max(top_k * 3, config.BM25_K)
+        )
+        reranked = _rerank_pairs(query, first_candidates, store, top_k)
+    except Exception as e:
+        logger.exception(f"[ASK] retrieval/rerank failed: {e}")
+        # حتی اگر شکست خورد، گراف مینیمال بده تا فرانت کرش نکند
         try:
-            doc_meta = (doc.meta and isinstance(doc.meta, str)) and json.loads(doc.meta) or {}
-        except Exception:
-            doc_meta = {}
-        snippet = (ch.text or "").strip().replace("\n", " ")
-        context_snippets.append(f"■ {snippet[:700]}")
-        if doc and ch.doc_id not in used_doc_ids:
-            citations.append({
-                "doc_id": ch.doc_id,
-                "title": doc.title or "",
-                "source_path": doc.source_path or "",
-                "meta": doc_meta,
-                "score": round(float(sc), 4),
-                "method": tag
-            })
-            used_doc_ids.add(ch.doc_id)
+            graph = build_answer_graph(query, [], store, top_k=0)
+        except Exception as ge:
+            logger.warning(f"[ASK][GRAPH] build failed after retrieval error: {ge}")
+        return {
+            "answer": answer,
+            "citations": [],
+            "graph": graph,
+        }
 
+    # اگر چیزی پیدا نشد
+    if not reranked:
+        try:
+            graph = build_answer_graph(query, [], store, top_k=0)
+        except Exception as ge:
+            logger.warning(f"[ASK][GRAPH] build failed on empty reranked: {ge}")
+        return {
+            "answer": "سندی مرتبط پیدا نشد.",
+            "citations": [],
+            "graph": graph,
+        }
+
+    # 2) ساخت شواهد و استنادها
+    context_snippets: List[str] = []
+    used_doc_ids: set[int] = set()
+    try:
+        for cid, sc, tag in reranked[:top_k]:
+            ch = store.get_chunk(cid)
+            if not ch:
+                continue
+            doc = store.get_document(ch.doc_id)
+            try:
+                doc_meta = (doc.meta and isinstance(doc.meta, str)) and json.loads(doc.meta) or {}
+            except Exception:
+                doc_meta = {}
+            snippet = (ch.text or "").strip().replace("\n", " ")
+            context_snippets.append(f"■ {snippet[:700]}")
+            if doc and ch.doc_id not in used_doc_ids:
+                citations.append({
+                    "doc_id": ch.doc_id,
+                    "title": doc.title or "",
+                    "source_path": doc.source_path or "",
+                    "meta": doc_meta,
+                    "score": round(float(sc), 4),
+                    "method": tag
+                })
+                used_doc_ids.add(ch.doc_id)
+    except Exception as e:
+        logger.exception(f"[ASK] building snippets/citations failed: {e}")
+
+    # 3) تاریخچهٔ کوتاه
     history_text = ""
     if history:
         try:
@@ -199,6 +234,7 @@ async def ask_endpoint(
         except Exception:
             pass
 
+    # 4) تماس با LLM
     system_msg = (
         "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس شواهد زیر پاسخ بده. "
         "اگر اطلاعات کافی نیست، بگو «اطلاعی ندارم» یا «نیازمند سند بیشتر است». "
@@ -210,8 +246,26 @@ async def ask_endpoint(
         "شواهد مرتبط (گزیده):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
         "فقط با تکیه بر همین شواهد پاسخ بده."
     )
-    answer = chat.chat(system=system_msg, user=user_msg)
-    return {"answer": answer, "citations": citations, "graph": graph_obj}
+    try:
+        llm_out = chat.chat(system=system_msg, user=user_msg)
+        if llm_out and isinstance(llm_out, str) and llm_out.strip():
+            answer = llm_out.strip()
+    except Exception as e:
+        logger.warning(f"[ASK][LLM] failed: {e}")
+
+    # 5) ساخت گراف (همیشه تلاش می‌کنیم حتی اگر LLM خطا داده باشد)
+    try:
+        graph = build_answer_graph(query, reranked, store, top_k=top_k)
+    except Exception as ge:
+        logger.warning(f"[ASK][GRAPH] build failed: {ge}")
+        graph = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
+
+    return {
+        "answer": answer,
+        "citations": citations,
+        "graph": graph,
+    }
+
 
 # ----------------- Helpers for admin post-actions ------------------
 def _ingest_paths_after_admin(paths: List[Path]):

@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "cytoscape": "^3.33.1",
+    "cytoscape-popper": "^4.0.1",
     "react": "^18.3.1",
     "react-cytoscapejs": "^2.0.0",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.3",
     "remark-gfm": "^4.0.0",
-    "sonner": "^1.5.0"
+    "sonner": "^1.5.0",
+    "tippy.js": "^6.3.7"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
