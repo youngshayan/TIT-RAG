@@ -313,7 +313,7 @@ export default function GraphView({ data, height = 540 }: Props) {
                 {selected.score != null && <div><span className="text-slate-500">امتیاز:</span> {Number(selected.score).toFixed(2)}</div>}
                 {selected.preview && (
                   <div>
-                    <div className="text-slate-500">مرور:</div>
+                    <div className="text-slate-1000">مرور:</div>
                     <div dir="auto" className="bg-white border rounded p-2 leading-6">{escapeHtml(selected.preview)}</div>
                   </div>
                 )}

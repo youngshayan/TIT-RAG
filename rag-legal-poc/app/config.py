@@ -67,9 +67,9 @@ GPT4O_API_KEY = os.getenv("GPT4O_API_KEY", "apikey ab87839b-8754-577b-9b9e-de68e
 GPT4O_MODEL   = os.getenv("GPT4O_MODEL",   "GPT-4o-mini")
 
 # Backup: DeepSeek Chat V3 via ArvanCloud
-DEEPSEEK_ENDPOINT = os.getenv("DEEPSEEK_ENDPOINT", "https://arvancloudai.ir/gateway/models/DeepSeek-Chat-V3-0324/S-1V3ANHYEKNsdstvNRRkXauUl9hGCf-Cv57g9W0PmbI2NUGYPoJN4FCpjXLzR8MKQ4VCSII4Phloe2F5bHR1fQYdeZT4nWN3-Rh5aotSrKibMZAyvIYxHvqkWP8GhUrfCPvsDUohYpBz90lUuhRaKZALpvrtTpCNT6teuOQ6y3n2tPE1V7fuZ6QbMcRhs8-uutzvE9ibH1zr8iKSDWf65QxeOEKDVvJoN3wRToRsOG2Ulu21NJ1eIKabD-nSMehEdCG6XLN6XQKs8tpjs5b3g/v1/chat/completions")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "apikey ab87839b-8754-577b-9b9e-de68e720dbb1")
-DEEPSEEK_MODEL   = os.getenv("DEEPSEEK_MODEL",   "DeepSeek-Chat-V3-0324")
+DEEPSEEK_ENDPOINT = os.getenv("DEEPSEEK_ENDPOINT", "https://api.avalai.ir/v1")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL")
+DEEPSEEK_MODEL   = os.getenv("DEEPSEEK_MODEL",   "gpt-4.1")
 
 # LLM runtime knobs
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
@@ -107,3 +107,22 @@ CATEGORY_RECIPIENTS = {
 ADMIN_INLINE_INDEX = True  # همزمان با آپلود، همان‌جا add_document_with_chunks + index_doc انجام شود
 RUN_INGEST_FOR_NEW_FILES = False  # اگر True و بالایی False باشد، بعد از آپلود روی همان فایل‌های جدید ingest_file اجرا می‌شود
 RUN_REEMBED_AFTER_ADMIN = False   # اگر True باشد بعد از هر آپلود ادمین، reembed_all در پس‌زمینه اجرا می‌شود (سنگین است)
+
+
+AVALAI_API_KEY = "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL"
+AVALAI_BASE_URL = "https://api.avalai.ir/v1"
+AVALAI_RERANK_MODEL = "cohere.rerank-v3-5:0"
+USE_AVALAI_RERANK = True            # روشن/خاموش
+LOCAL_HYBRID_CAND_K = 60            # چند کاندید اول از استور وارد هیبرید شوند
+LOCAL_HYBRID_TOP_K = 20             # خروجی هیبرید برای ورودی رِرَنکر
+HYBRID_W_BM25 = 0.6
+HYBRID_W_TFIDF = 0.4
+
+
+CHUNK_TOKENS = 650
+CHUNK_OVERLAP = 90
+
+
+
+DOC_FAISS_INDEX_PATH = DATA_DIR / "faiss_doc.index"
+DOC_FAISS_MAP_PATH   = DATA_DIR / "faiss_doc_map.json"
