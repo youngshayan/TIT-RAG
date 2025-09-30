@@ -1,12 +1,11 @@
 # app/store.py
 from __future__ import annotations
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Set
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 from datetime import datetime
 from pathlib import Path
 import json
 import re
-import os
 
 import numpy as np
 import faiss
@@ -329,65 +328,88 @@ class Store:
                 picked.add(did)
         return picked
 
-    def search_hybrid(self, query: str, vec_k: int, bm25_k: int) -> List[Tuple[int, float, str]]:
+    def search_hybrid(
+        self,
+        query: str,
+        vec_k: int,
+        bm25_k: int,
+        restrict_doc_ids: Optional[Set[int]] = None,
+        allow_broaden: bool = False,
+    ) -> List[Tuple[int, float, str]]:
         """
-        جریان جدید:
+        جریان:
           1) Doc-level shortlist (m≈8–12)
-          2) Vector + BM25 (chunk-level)
-          3) نتایج فقط از میان docهای منتخب نگه داشته می‌شود
+          2) Vector + BM25 (chunk-level) — در صورت وجود restrict_doc_ids به آن محدود می‌شود
+          3) اگر محدودسازی نتیجه نداد و allow_broaden=True بود، محدودیت برداشته می‌شود
         """
-        out: List[Tuple[int, float, str]] = []
-        qn = normalize_persian(query or "")
+        def _run(vec_k_val: int, bm25_k_val: int, restrict: Optional[Set[int]]) -> List[Tuple[int, float, str]]:
+            out: List[Tuple[int, float, str]] = []
+            qn = normalize_persian(query or "")
 
-        # ---- (1) Doc prefilter ----
-        shortlist = self._prefilter_docs(qn, m=12)
-        restrict = len(shortlist) > 0
+            # ---- (1) Doc prefilter ----
+            shortlist = self._prefilter_docs(qn, m=12)
+            restrict_set = set(restrict) if restrict else set()
+            # اگر هر دو وجود دارند، اشتراک بگیر
+            if restrict_set and shortlist:
+                shortlist = shortlist.intersection(restrict_set)
+            elif restrict_set:
+                shortlist = restrict_set
 
-        # ---- (2) Vector (chunk-level) ----
-        vec_hits = []
-        if self.index is not None and self.index.ntotal > 0:
-            qv = self.model.encode([f"query: {qn}"], normalize_embeddings=True, convert_to_numpy=True).astype("float32")
-            scores, idxs = self.index.search(qv, min(vec_k * 2, max(1, self.index.ntotal)))
-            for i, s in zip(idxs[0], scores[0]):
-                if i == -1:
-                    continue
-                cid = self.id_to_chunk.get(int(i))
-                if cid is None:
-                    continue
-                if restrict:
-                    doc = self.get_document_by_chunk(cid)
-                    if (not doc) or (doc.id not in shortlist):
+            restrict_active = len(shortlist) > 0
+
+            # ---- (2) Vector (chunk-level) ----
+            vec_hits = []
+            if self.index is not None and self.index.ntotal > 0:
+                qv = self.model.encode([f"query: {qn}"], normalize_embeddings=True, convert_to_numpy=True).astype("float32")
+                scores, idxs = self.index.search(qv, min(vec_k_val * 2, max(1, self.index.ntotal)))
+                for i, s in zip(idxs[0], scores[0]):
+                    if i == -1:
                         continue
-                vec_hits.append((cid, float(s), "vec"))
+                    cid = self.id_to_chunk.get(int(i))
+                    if cid is None:
+                        continue
+                    if restrict_active:
+                        doc = self.get_document_by_chunk(cid)
+                        if (not doc) or (doc.id not in shortlist):
+                            continue
+                    vec_hits.append((cid, float(s), "vec"))
 
-        # ---- (3) BM25 (chunk-level) ----
-        bm_hits = []
-        if self.bm25 and self.bm25_tokens:
-            scores = self.bm25.get_scores(self._tokenize(qn))
-            if len(scores):
-                k = min(bm25_k * 2, len(scores))
-                top_idx = np.argpartition(-scores, k - 1)[:k]
-                top_idx = top_idx[np.argsort(-scores[top_idx])]
-                ordered_ids = [cid for _, cid in sorted(self.id_to_chunk.items(), key=lambda x: x[0])]
-                for bi in top_idx:
-                    if 0 <= bi < len(ordered_ids):
-                        cid = ordered_ids[bi]
-                        if restrict:
-                            doc = self.get_document_by_chunk(cid)
-                            if (not doc) or (doc.id not in shortlist):
-                                continue
-                        bm_hits.append((cid, float(scores[bi]), "bm25"))
+            # ---- (3) BM25 (chunk-level) ----
+            bm_hits = []
+            if self.bm25 and self.bm25_tokens:
+                scores = self.bm25.get_scores(self._tokenize(qn))
+                if len(scores):
+                    k = min(bm25_k_val * 2, len(scores))
+                    top_idx = np.argpartition(-scores, k - 1)[:k]
+                    top_idx = top_idx[np.argsort(-scores[top_idx])]
+                    ordered_ids = [cid for _, cid in sorted(self.id_to_chunk.items(), key=lambda x: x[0])]
+                    for bi in top_idx:
+                        if 0 <= bi < len(ordered_ids):
+                            cid = ordered_ids[bi]
+                            if restrict_active:
+                                doc = self.get_document_by_chunk(cid)
+                                if (not doc) or (doc.id not in shortlist):
+                                    continue
+                            bm_hits.append((cid, float(scores[bi]), "bm25"))
 
-        # ---- (4) merge ----
-        merged: Dict[int, Tuple[float, str]] = {}
-        for cid, sc, tag in bm_hits + vec_hits:
-            if cid not in merged or sc > merged[cid][0]:
-                merged[cid] = (sc, tag)
+            # ---- merge ----
+            merged: Dict[int, Tuple[float, str]] = {}
+            for cid, sc, tag in bm_hits + vec_hits:
+                if cid not in merged or sc > merged[cid][0]:
+                    merged[cid] = (sc, tag)
 
-        out = sorted([(cid, sc, tag) for cid, (sc, tag) in merged.items()],
-                     key=lambda x: -x[1])
-        # نهایتاً به تعداد خواسته شده برگردان
-        return out[: max(vec_k, bm25_k)]
+            out2 = sorted([(cid, sc, tag) for cid, (sc, tag) in merged.items()],
+                          key=lambda x: -x[1])
+            return out2
+
+        # اجرای محدود (در صورت وجود restrict_doc_ids)
+        first = _run(vec_k, bm25_k, restrict_doc_ids)
+        if first or not allow_broaden:
+            return first[: max(vec_k, bm25_k)]
+
+        # اگر محدود بود و چیزی نداد و اجازهٔ broaden داریم: دوباره بدون محدودیت
+        widened = _run(vec_k, bm25_k, restrict=None)
+        return widened[: max(vec_k, bm25_k)]
 
     # ---------------------- Compatibility shim ----------------------
     def add_document(self, title: str, source_path, full_text: str = "", meta: dict | None = None) -> int:
@@ -443,11 +465,9 @@ class Store:
         # reset & add
         self._reset_faiss()
         self._init_faiss(dim=mat.shape[1])
-        # به‌جای chunk_id به عنوان id، از 0..N-1 استفاده می‌کنیم و map می‌سازیم
         self.index.add(mat)
-        self.id_to_chunk = {}
-        for vid, ch_id in enumerate(chunk_ids):
-            self.id_to_chunk[int(vid)] = int(ch_id)
+        # mapِ vector-id -> chunk_id
+        self.id_to_chunk = {int(vid): int(chid) for vid, chid in enumerate(chunk_ids)}
         self._save_faiss()
 
         # --- Doc-level
@@ -457,13 +477,15 @@ class Store:
         doc_ids = []
         for d in docs:
             # نمایندهٔ سند: عنوان + دو چانک اول
-            first_two = []
+            first_two_texts: List[str] = []
             for cid in docid_to_chunks.get(d.id, [])[:2]:
-                # پیدا کردن متن چانک
                 ct = next((t for (ccid, t, _did) in rows if ccid == cid), "")
-                first_two.append(ct or "")
-            rep = self._build_doc_repr(d, [Chunk(id=0, doc_id=d.id, position=0, text=first_two[0] if len(first_two) > 0 else ""),
-                                           Chunk(id=0, doc_id=d.id, position=1, text=first_two[1] if len(first_two) > 1 else "")])
+                first_two_texts.append(ct or "")
+            fake_chunks = [
+                Chunk(id=0, doc_id=d.id, position=0, text=first_two_texts[0] if len(first_two_texts) > 0 else ""),
+                Chunk(id=0, doc_id=d.id, position=1, text=first_two_texts[1] if len(first_two_texts) > 1 else ""),
+            ]
+            rep = self._build_doc_repr(d, fake_chunks)
             doc_ids.append(int(d.id))
             doc_vecs.append(rep)
         if doc_vecs:
@@ -474,9 +496,7 @@ class Store:
                 doc_emb.append(part)
             dmat = np.vstack(doc_emb).astype("float32")
             self.doc_index.add(dmat)
-            self.doc_idmap = {}
-            for vid, did in enumerate(doc_ids):
-                self.doc_idmap[int(vid)] = int(did)
+            self.doc_idmap = {int(vid): int(did) for vid, did in enumerate(doc_ids)}
             self._save_doc_faiss()
 
         # --- BM25 fresh

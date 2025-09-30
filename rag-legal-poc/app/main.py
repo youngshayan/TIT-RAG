@@ -3,21 +3,24 @@ from __future__ import annotations
 
 import json, uuid, shutil, logging, time
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import BackgroundTasks
+
 from app.graph import build_answer_graph
-# بالای فایل اضافه کن:
-
-
 from app import config
 from app.store import Store
 from app.llm import ChatClient
 from app.ingest import _build_chunks, _load_text_from_path, ingest_file
 from app.metadata import extract_doc_meta
-from app.retrieval import summarize_text, find_conflicts_against_index, _rerank_pairs
+from app.retrieval import (
+    summarize_text,
+    find_conflicts_against_index,
+    _rerank_pairs,
+    answer_with_context,   # ← اضافه شد
+)
 from app.classify import classify_category
 from app.notify import send_email
 
@@ -29,7 +32,7 @@ except Exception:
 logger = logging.getLogger("rag")
 logger.setLevel(logging.INFO)
 
-app = FastAPI(title="RAG Legal PoC", version="0.6.1")
+app = FastAPI(title="RAG Legal PoC", version="0.7.0")
 
 # CORS — باز گذاشته شده برای تست؛ در تولید محدود کن
 app.add_middleware(
@@ -66,7 +69,7 @@ def health():
     logger.info(f"[HEALTH] index_rows={rows}")
     return {"ok": True, "index_rows": rows, "version": app.version}
 
-# مسیر روت هم می‌ماند (برای تست مستقیم با مرورگر/پستمن)
+# مسیر روت برای تست
 @app.get("/")
 def root():
     rows = int(store.index.ntotal if store.index is not None else 0)
@@ -123,103 +126,44 @@ async def upload_and_analyze(
                 "conflicts": conflicts
             })
         finally:
-            try: tmp_path.unlink(missing_ok=True)
-            except Exception: pass
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
     return {"analyzed": results}
 
-# ----------------- End-User: Ask (with short history) --------------
-# ----------------- End-User: Ask (with short history) --------------
+# ----------------- End-User: Ask (Context-aware with session) --------------
 @app.post("/ask")
 async def ask_endpoint(
     query: str = Form(...),
     top_k: int = Form(5),
-    history: Optional[str] = Form(None)
+    history: Optional[str] = Form(None),
+    sid: Optional[str] = Form(None),     # ← جدید: شناسهٔ جلسه از فرانت
 ):
     qlog = (query or "")[:80].replace("\n", " ")
-    logger.info(f"[ASK] query='{qlog}...' top_k={top_k}")
+    logger.info(f"[ASK] query='{qlog}...' top_k={top_k} sid={sid or '-'}")
 
-    # مقدار پیش‌فرض تا هرگز UnboundLocal نشود
-    answer: str = "نتوانستم پاسخ تولید کنم. لطفاً دوباره تلاش کنید یا پرسش را دقیق‌تر بیان کنید."
-    citations: List[Dict[str, Any]] = []
-    graph: Dict[str, Any] = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
+    # مقدار پیش‌فرض
+    default_answer: str = "نتوانستم پاسخ تولید کنم. لطفاً دوباره تلاش کنید یا پرسش را دقیق‌تر بیان کنید."
+    empty_graph = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
 
     if not query or not query.strip():
         raise HTTPException(status_code=400, detail="Query is empty.")
 
-    # اگر ایندکس خالی است، پاسخ و گراف حداقلی برگردان
+    # اگر ایندکس خالی است
     if store.index is None or store.index.ntotal == 0:
         try:
             graph = build_answer_graph(query, [], store, top_k=0)
         except Exception as ge:
             logger.warning(f"[ASK][GRAPH] build failed on empty index: {ge}")
+            graph = empty_graph
         return {
             "answer": "در حال حاضر هیچ سندی در پایگاه وجود ندارد. ابتدا اسناد را ingest کنید.",
             "citations": [],
             "graph": graph,
         }
 
-    # 1) گرفتن کاندیدهای اولیه و ریرنک
-    try:
-        first_candidates = store.search_hybrid(
-            query=query,
-            vec_k=max(top_k * 3, config.VEC_K),
-            bm25_k=max(top_k * 3, config.BM25_K)
-        )
-        reranked = _rerank_pairs(query, first_candidates, store, top_k)
-    except Exception as e:
-        logger.exception(f"[ASK] retrieval/rerank failed: {e}")
-        # حتی اگر شکست خورد، گراف مینیمال بده تا فرانت کرش نکند
-        try:
-            graph = build_answer_graph(query, [], store, top_k=0)
-        except Exception as ge:
-            logger.warning(f"[ASK][GRAPH] build failed after retrieval error: {ge}")
-        return {
-            "answer": answer,
-            "citations": [],
-            "graph": graph,
-        }
-
-    # اگر چیزی پیدا نشد
-    if not reranked:
-        try:
-            graph = build_answer_graph(query, [], store, top_k=0)
-        except Exception as ge:
-            logger.warning(f"[ASK][GRAPH] build failed on empty reranked: {ge}")
-        return {
-            "answer": "سندی مرتبط پیدا نشد.",
-            "citations": [],
-            "graph": graph,
-        }
-
-    # 2) ساخت شواهد و استنادها
-    context_snippets: List[str] = []
-    used_doc_ids: set[int] = set()
-    try:
-        for cid, sc, tag in reranked[:top_k]:
-            ch = store.get_chunk(cid)
-            if not ch:
-                continue
-            doc = store.get_document(ch.doc_id)
-            try:
-                doc_meta = (doc.meta and isinstance(doc.meta, str)) and json.loads(doc.meta) or {}
-            except Exception:
-                doc_meta = {}
-            snippet = (ch.text or "").strip().replace("\n", " ")
-            context_snippets.append(f"■ {snippet[:700]}")
-            if doc and ch.doc_id not in used_doc_ids:
-                citations.append({
-                    "doc_id": ch.doc_id,
-                    "title": doc.title or "",
-                    "source_path": doc.source_path or "",
-                    "meta": doc_meta,
-                    "score": round(float(sc), 4),
-                    "method": tag
-                })
-                used_doc_ids.add(ch.doc_id)
-    except Exception as e:
-        logger.exception(f"[ASK] building snippets/citations failed: {e}")
-
-    # 3) تاریخچهٔ کوتاه
+    # تاریخچهٔ کوتاه همان قبلی — این فقط در پرامپت LLM مصرف می‌شود (در answer_with_context هم لحاظ می‌کنیم اگر بخواهیم)
     history_text = ""
     if history:
         try:
@@ -234,38 +178,45 @@ async def ask_endpoint(
         except Exception:
             pass
 
-    # 4) تماس با LLM
-    system_msg = (
-        "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس شواهد زیر پاسخ بده. "
-        "اگر اطلاعات کافی نیست، بگو «اطلاعی ندارم» یا «نیازمند سند بیشتر است». "
-        "از حدس زدن خودداری کن. پاسخ را شفاف و منظم ارائه بده.\n" + config.DISCLAIMER
-    )
-    user_msg = (
-        f"{history_text}"
-        f"پرسش:\n{query}\n\n"
-        "شواهد مرتبط (گزیده):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
-        "فقط با تکیه بر همین شواهد پاسخ بده."
-    )
+    # --- پاسخ با زمینهٔ جلسه (اول محدود به اسناد جلسات قبل؛ در صورت نیاز broaden) ---
     try:
-        llm_out = chat.chat(system=system_msg, user=user_msg)
-        if llm_out and isinstance(llm_out, str) and llm_out.strip():
-            answer = llm_out.strip()
+        out = answer_with_context(
+            store=store,
+            chatter=chat,
+            question=(history_text + query) if history_text else query,
+            top_k=top_k or 6,
+            sid=sid,
+        )
+        answer = out.get("answer") or default_answer
+        citations = out.get("citations") or []
+        used_doc_ids = set(out.get("used_doc_ids") or [])
     except Exception as e:
-        logger.warning(f"[ASK][LLM] failed: {e}")
+        logger.exception(f"[ASK] answer_with_context failed: {e}")
+        # اگر هر مشکلی در لایهٔ جدید بود، با گراف خالی برگرد
+        return {"answer": default_answer, "citations": [], "graph": empty_graph}
 
-    # 5) ساخت گراف (همیشه تلاش می‌کنیم حتی اگر LLM خطا داده باشد)
+    # --- ساخت گراف بر اساس docهای استفاده شده (تا گراف با زمینهٔ جلسه هم‌راستا باشد) ---
     try:
+        # از همان docها دوباره یک رتریوال برای گراف می‌گیریم
+        restrict: Optional[Set[int]] = used_doc_ids if used_doc_ids else None
+        first_candidates = store.search_hybrid(
+            query=query,
+            vec_k=max(top_k * 3, config.VEC_K),
+            bm25_k=max(top_k * 3, config.BM25_K),
+            restrict_doc_ids=restrict,
+            allow_broaden=True,  # اگر چیزی نبود، باز کن تا گراف بی‌دلیل خالی نشود
+        )
+        reranked = _rerank_pairs(query, first_candidates, store, top_k)
         graph = build_answer_graph(query, reranked, store, top_k=top_k)
     except Exception as ge:
         logger.warning(f"[ASK][GRAPH] build failed: {ge}")
-        graph = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
+        graph = empty_graph
 
     return {
         "answer": answer,
         "citations": citations,
         "graph": graph,
     }
-
 
 # ----------------- Helpers for admin post-actions ------------------
 def _ingest_paths_after_admin(paths: List[Path]):
@@ -335,8 +286,10 @@ async def admin_upload_and_index(
             shutil.move(str(tmp_path), final_path)
         except Exception:
             shutil.copy(str(tmp_path), final_path)
-            try: tmp_path.unlink(missing_ok=True)
-            except Exception: pass
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
         logger.info(f"[ADMIN] stored at: {final_path}")
         new_final_paths.append(final_path)
 

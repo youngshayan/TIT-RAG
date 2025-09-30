@@ -1,6 +1,6 @@
 # app/retrieval.py
 from __future__ import annotations
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Set
 import logging
 import re
 import json
@@ -27,23 +27,8 @@ _LOCAL_HYBRID_TOP_K  = int(getattr(config, "LOCAL_HYBRID_TOP_K", 20))
 _W_BM25 = float(getattr(config, "HYBRID_W_BM25", 0.6))
 _W_TFIDF = float(getattr(config, "HYBRID_W_TFIDF", 0.4))
 
-# ----------------------------------------------------
-# وابستگی‌های اختیاری (برای Hybrid محلی)
-# ----------------------------------------------------
-_HAS_SKLEARN = True
-_HAS_BM25 = True
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-except Exception:
-    _HAS_SKLEARN = False
-    logger.warning("[RETR] scikit-learn در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
-try:
-    from rank_bm25 import BM25Okapi
-except Exception:
-    _HAS_BM25 = False
-    logger.warning("[RETR] rank-bm25 در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
-
+# چند جلسهٔ اخیر را در رم نگه می‌داریم (sid -> set(doc_id))
+_SESSION_USED_DOCS: Dict[str, Set[int]] = {}
 
 # ----------------------------------------------------
 # UTILs
@@ -121,7 +106,7 @@ class AvalAIService:
 
 
 # ----------------------------------------------------
-# RAG System Prompt (بدون تغییر)
+# RAG System Prompt
 # ----------------------------------------------------
 RAG_SYSTEM = (
     "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس متون ارائه‌شده پاسخ بده. "
@@ -149,6 +134,21 @@ def summarize_text(chatter: ChatClient, text: str, extracted_meta: Dict[str, Any
 # ----------------------------------------------------
 # Hybrid محلی (روی کاندیدهای استور، نه کل کورپوس)
 # ----------------------------------------------------
+_HAS_SKLEARN = True
+_HAS_BM25 = True
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+except Exception:
+    _HAS_SKLEARN = False
+    logger.warning("[RETR] scikit-learn در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
+try:
+    from rank_bm25 import BM25Okapi
+except Exception:
+    _HAS_BM25 = False
+    logger.warning("[RETR] rank-bm25 در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
+
+
 def _local_hybrid_rank(query: str, texts: List[str]) -> List[int]:
     """
     روی لیست کوچکی از متن‌ها (کاندیدهای اولیه از استور)، امتیاز Hybrid = 0.6*BM25 + 0.4*TFIDF
@@ -164,7 +164,7 @@ def _local_hybrid_rank(query: str, texts: List[str]) -> List[int]:
     # BM25
     tokenized_docs = [_preprocess_for_bm25(t) for t in texts]
     bm25 = BM25Okapi(tokenized_docs)
-    bm25_scores = bm25.get_scores(_preprocess_for_bm25(query)).tolist()  # length=n
+    bm25_scores = bm25.get_scores(_preprocess_for_bm25(query)).tolist()
     bm25_norm = _normalize_scores(bm25_scores)
 
     # TF-IDF
@@ -328,3 +328,96 @@ def find_conflicts_against_index(
         })
 
     return out
+
+
+# ----------------------------------------------------
+# پاسخ با زمینهٔ جلسه (جلسه‌محور)
+# ----------------------------------------------------
+def answer_with_context(
+    store: Store,
+    chatter: ChatClient,
+    question: str,
+    top_k: int = 6,
+    sid: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    اگر sid داده شود:
+      - ابتدا فقط داخل اسنادِ استفاده‌شدهٔ قبلی (همان sid) جست‌وجو می‌کند.
+      - اگر چیزی نبود، با allow_broaden=True جست‌وجو گسترده می‌شود.
+      - هر سندی که در پاسخ نهایی استفاده شد به set مربوط به sid افزوده می‌شود.
+    خروجی: { answer, citations, used_doc_ids }
+    """
+    used_doc_ids_session: Set[int] = set()
+    if sid:
+        used_doc_ids_session = _SESSION_USED_DOCS.get(sid, set())
+
+    # مرحلهٔ جست‌وجو
+    first_candidates = store.search_hybrid(
+        query=question,
+        vec_k=max(top_k * 3, config.VEC_K),
+        bm25_k=max(top_k * 3, config.BM25_K),
+        restrict_doc_ids=(used_doc_ids_session if used_doc_ids_session else None),
+        allow_broaden=True,  # اگر در محدودهٔ جلسه چیزی نبود، خودش باز می‌شود
+    )
+    reranked = _rerank_pairs(question, first_candidates, store, top_k)
+
+    # اگر هیچ چیز نبود
+    if not reranked:
+        return {
+            "answer": "سندی مرتبط پیدا نشد.",
+            "citations": [],
+            "used_doc_ids": list(used_doc_ids_session),
+        }
+
+    # ساخت شواهد و استنادها
+    context_snippets: List[str] = []
+    citations: List[Dict[str, Any]] = []
+    new_used_doc_ids: Set[int] = set(used_doc_ids_session)
+
+    for cid, sc, tag in reranked[:top_k]:
+        ch = store.get_chunk(cid)
+        if not ch:
+            continue
+        doc = store.get_document(ch.doc_id)
+        try:
+            doc_meta = (doc.meta and isinstance(doc.meta, str)) and json.loads(doc.meta) or {}
+        except Exception:
+            doc_meta = {}
+
+        snippet = (ch.text or "").strip().replace("\n", " ")
+        context_snippets.append(f"■ {snippet[:700]}")
+        if doc:
+            new_used_doc_ids.add(ch.doc_id)
+            # تنها یک استناد از هر سند
+            if not any(c.get("doc_id") == ch.doc_id for c in citations):
+                citations.append({
+                    "doc_id": ch.doc_id,
+                    "title": doc.title or "",
+                    "source_path": doc.source_path or "",
+                    "meta": doc_meta,
+                    "score": round(float(sc), 4),
+                    "method": tag
+                })
+
+    # تماس با LLM
+    system_msg = (
+        "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس شواهد زیر پاسخ بده. "
+        "اگر اطلاعات کافی نیست، بگو «اطلاعی ندارم» یا «نیازمند سند بیشتر است». "
+        "از حدس زدن خودداری کن. پاسخ را شفاف و منظم ارائه بده.\n" + config.DISCLAIMER
+    )
+    user_msg = (
+        f"پرسش:\n{question}\n\n"
+        "شواهد مرتبط (گزیده):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
+        "فقط با تکیه بر همین شواهد پاسخ بده."
+    )
+    answer = chatter.chat(system=system_msg, user=user_msg)
+
+    # به‌روزرسانی حافظهٔ جلسه
+    if sid:
+        _SESSION_USED_DOCS[sid] = new_used_doc_ids
+
+    return {
+        "answer": answer,
+        "citations": citations,
+        "used_doc_ids": list(new_used_doc_ids),
+    }

@@ -1,4 +1,5 @@
 // frontend/src/api.ts
+
 /**
  * API base resolution:
  * - از ENV: import.meta.env.VITE_API_BASE
@@ -47,6 +48,24 @@ async function jsonOrText(r: Response) {
   return r.text();
 }
 
+// --- ساده: ساخت/گرفتن sid جلسه ---
+function getOrCreateSID(): string {
+  try {
+    let sid = localStorage.getItem("chat_sid");
+    if (sid && sid.length > 0) return sid;
+    // تلاش برای UUID
+    if (typeof crypto !== "undefined" && (crypto as any).randomUUID) {
+      sid = (crypto as any).randomUUID();
+    } else {
+      sid = "sid_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+    localStorage.setItem("chat_sid", sid);
+    return sid;
+  } catch {
+    return "sid_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+}
+
 export async function health() {
   const url = `${API_BASE}/health`;
   const r = await fetch(url, { method: "GET" });
@@ -72,6 +91,9 @@ export async function ask(query: string, top_k?: number, history?: ChatTurn[]) {
     const last3 = history.slice(-3);
     fd.append("history", JSON.stringify(last3));
   }
+  // ← اضافه شد: sid برای «حافظهٔ جلسه»
+  fd.append("sid", getOrCreateSID());
+
   const r = await fetch(`${API_BASE}/ask`, { method: "POST", body: fd });
   if (!r.ok) throw new Error(String(await jsonOrText(r)));
   return r.json();
