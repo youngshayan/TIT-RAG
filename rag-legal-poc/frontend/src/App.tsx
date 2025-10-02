@@ -95,7 +95,7 @@ export default function App(){
       </main>
 
       <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-muted">
-        ساخته‌شده برایMindSol Team - PoC ©
+        Mindsol Team / Made with ❤️ from iran
       </footer>
 
       <Toaster position="top-center" richColors />
