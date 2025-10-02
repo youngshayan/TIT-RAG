@@ -26,7 +26,7 @@ load_dotenv(override=True)
 
 # --- Embeddings ---
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
-EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")  # "cpu" یا "cuda"
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu")
 
 # --- Retrieval knobs ---
 VEC_K = int(os.getenv("VEC_K", "15"))
@@ -78,13 +78,12 @@ LLM_TIMEOUT_SEC = float(os.getenv("LLM_TIMEOUT_SEC", "40"))
 
 
 # --- BM25 (sparse) storage + knobs ---
-BM25_CORPUS_PATH = DATA_DIR / "bm25_corpus.jsonl"   # متن چانک‌ها (JSON Lines)
-BM25_INDEX_PATH  = DATA_DIR / "bm25_index.pkl"      # مدل/وُکتورایزر pickled
-
+BM25_CORPUS_PATH = DATA_DIR / "bm25_corpus.jsonl"
+BM25_INDEX_PATH  = DATA_DIR / "bm25_index.pkl"
 # تنظیمات قابل‌تیون برای BM25
 BM25_MIN_DF       = int(os.getenv("BM25_MIN_DF", "1"))
 BM25_MAX_FEATURES = int(os.getenv("BM25_MAX_FEATURES", "250000"))
-# tuple به صورت "1,2" هم قابل خواندن از .env هست؛ این دیفالت:
+
 BM25_NGRAM        = (1, 2)
 
 
@@ -104,17 +103,17 @@ CATEGORY_RECIPIENTS = {
 
 
 # --- Admin post-actions ---
-ADMIN_INLINE_INDEX = True  # همزمان با آپلود، همان‌جا add_document_with_chunks + index_doc انجام شود
-RUN_INGEST_FOR_NEW_FILES = False  # اگر True و بالایی False باشد، بعد از آپلود روی همان فایل‌های جدید ingest_file اجرا می‌شود
-RUN_REEMBED_AFTER_ADMIN = False   # اگر True باشد بعد از هر آپلود ادمین، reembed_all در پس‌زمینه اجرا می‌شود (سنگین است)
+ADMIN_INLINE_INDEX = True
+RUN_INGEST_FOR_NEW_FILES = False
+RUN_REEMBED_AFTER_ADMIN = False
 
 
 AVALAI_API_KEY = "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL"
 AVALAI_BASE_URL = "https://api.avalai.ir/v1"
 AVALAI_RERANK_MODEL = "cohere.rerank-v3-5:0"
-USE_AVALAI_RERANK = True            # روشن/خاموش
-LOCAL_HYBRID_CAND_K = 60            # چند کاندید اول از استور وارد هیبرید شوند
-LOCAL_HYBRID_TOP_K = 20             # خروجی هیبرید برای ورودی رِرَنکر
+USE_AVALAI_RERANK = True
+LOCAL_HYBRID_CAND_K = 60
+LOCAL_HYBRID_TOP_K = 20
 HYBRID_W_BM25 = 0.6
 HYBRID_W_TFIDF = 0.4
 

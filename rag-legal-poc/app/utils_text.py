@@ -6,26 +6,26 @@ _arabic_to_persian = str.maketrans("كي", "کی")
 def normalize_persian(text: str) -> str:
     if not text:
         return ""
-    # Unicode normalization مشابه after-clean
+
     text = unicodedata.normalize("NFKC", text)
-    # یکسان‌سازی ی/ک
+
     text = text.translate(_arabic_to_persian)
-    # حذف کنترل‌کاراکترها (به‌جز \n و \t و ZWNJ)
+
     text = "".join(
         ch for ch in text
         if (ch in ("\n", "\r", "\t") or ch == "\u200C" or ord(ch) >= 32)
     )
-    # فاصله‌های اضافه
+
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\s+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # فاصله قبل از علائم
+
     text = re.sub(r"\s+([,،:؛\.\?!)])", r"\1", text)
-    # خط جدید‌ها
+
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text.strip()
 
-# از اسکریپت دوم: بازسازی واژه‌هایی که حروفشان با فاصله آمده‌اند
+
 ARABIC_RANGES = (
     "\u0600-\u06FF"
     "\u0750-\u077F"

@@ -1,4 +1,3 @@
-// frontend/src/components/AdminPanel.tsx
 import React, { useState } from "react";
 import { adminUploadIndex } from "../api";
 import { toast } from "sonner";
@@ -44,67 +43,66 @@ export default function AdminPanel(){
 
   if(!logged){
     return (
-      <div className="bg-white rounded-2xl shadow-card p-6 max-w-md mx-auto">
+      <div className="bg-card rounded-2xl shadow-card p-6 max-w-md mx-auto border border-border">
         <h2 className="text-lg font-semibold mb-4">ورود ادمین</h2>
         <input type="password" value={token} onChange={e=>setToken(e.target.value)}
-               placeholder="Admin Token" className="w-full border rounded-xl p-3" />
+               placeholder="رمز عبور" className="input" />
         <button onClick={onLogin}
-          className="mt-3 px-5 py-2 rounded-xl bg-brand text-white hover:bg-brand-dark">ورود</button>
+          className="mt-3 btn-brand w-full">ورود</button>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-card p-6">
+    <div className="bg-card rounded-2xl shadow-card p-6 border border-border">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">ادمین: آپلود + ایندکس + دسته‌بندی + ایمیل</h2>
-        <button onClick={onLogout} className="text-xs text-red-600 hover:underline">خروج</button>
+        <button onClick={onLogout} className="btn-ghost text-red-300">خروج</button>
       </div>
 
       <div className="grid lg:grid-cols-6 gap-3 mt-4">
-        <div className="lg:col-span-2 border rounded-xl p-3">
+        <div className="lg:col-span-2 border border-border rounded-xl p-3 bg-card-2">
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={autoCat} onChange={e=>setAutoCat(e.target.checked)} />
+            <input type="checkbox" checked={autoCat} onChange={e=>setAutoCat(e.target.checked)} className="accent-[rgb(214,28,47)]" />
             تشخیص خودکار دسته‌بندی
           </label>
           {!autoCat && (
-            <select value={cat} onChange={e=>setCat(e.target.value)}
-                    className="mt-2 w-full border rounded-xl p-2">
+            <select value={cat} onChange={e=>setCat(e.target.value)} className="select mt-2">
               {CATS.map(c=> <option key={c} value={c}>{c}</option>)}
             </select>
           )}
         </div>
         <input multiple type="file" accept=".pdf,.txt,.text,.md"
                onChange={e=> setFiles(Array.from(e.target.files || []))}
-               className="block w-full border rounded-xl p-3 lg:col-span-3" />
+               className="input lg:col-span-3" />
         <button onClick={onGo} disabled={busy}
-                className="px-5 py-2 rounded-xl bg-brand text-white hover:bg-brand-dark transition disabled:opacity-50">
+                className="btn-brand">
           {busy ? "در حال اجرا..." : "اجرا"}
         </button>
       </div>
 
       {!result ? null : (
         <div className="mt-6 overflow-x-auto">
-          <table className="min-w-[800px] w-full text-sm border">
-            <thead className="bg-slate-50">
+          <table className="table min-w-[800px]">
+            <thead>
               <tr>
-                <th className="p-2 border">نام فایل</th>
-                <th className="p-2 border">دسته‌بندی</th>
-                <th className="p-2 border">ایندکس</th>
-                <th className="p-2 border">ایمیل</th>
-                <th className="p-2 border">گیرندگان</th>
-                <th className="p-2 border">مسیر ذخیره</th>
+                <th>نام فایل</th>
+                <th>دسته‌بندی</th>
+                <th>ایندکس</th>
+                <th>ایمیل</th>
+                <th>گیرندگان</th>
+                <th>مسیر ذخیره</th>
               </tr>
             </thead>
             <tbody>
               {(result.indexed||[]).map((x:any, i:number)=>(
                 <tr key={i}>
-                  <td className="p-2 border">{x.filename}</td>
-                  <td className="p-2 border">{x.category}</td>
-                  <td className="p-2 border">{x.indexed ? "✅" : "❌"}</td>
-                  <td className="p-2 border">{x.notified ? "✅" : "—"}</td>
-                  <td className="p-2 border text-xs">{(x.recipients||[]).join(", ")||"—"}</td>
-                  <td className="p-2 border text-xs"><code>{x.stored_path}</code></td>
+                  <td className="font-medium">{x.filename}</td>
+                  <td><span className="badge">{x.category}</span></td>
+                  <td>{x.indexed ? "✅" : "❌"}</td>
+                  <td>{x.notified ? "✅" : "—"}</td>
+                  <td className="text-xs">{(x.recipients||[]).join(", ")||"—"}</td>
+                  <td className="text-xs font-mono"><code>{x.stored_path}</code></td>
                 </tr>
               ))}
             </tbody>

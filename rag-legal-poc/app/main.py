@@ -34,17 +34,17 @@ logger.setLevel(logging.INFO)
 
 app = FastAPI(title="RAG Legal PoC", version="0.7.0")
 
-# CORS — باز گذاشته شده برای تست؛ در تولید محدود کن
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # در تولید: ["http://localhost:5173", ...]
+    allow_origins=["*"],
     allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# لاگ هر درخواست
+
 @app.middleware("http")
 async def dispatch(request: Request, call_next):
     t0 = time.time()
@@ -62,14 +62,14 @@ async def dispatch(request: Request, call_next):
 store = Store()
 chat = ChatClient()
 
-# ساده‌ترین هلث‌چک مخصوص فرانت
+
 @app.get("/health")
 def health():
     rows = int(store.index.ntotal if store.index is not None else 0)
     logger.info(f"[HEALTH] index_rows={rows}")
     return {"ok": True, "index_rows": rows, "version": app.version}
 
-# مسیر روت برای تست
+
 @app.get("/")
 def root():
     rows = int(store.index.ntotal if store.index is not None else 0)
@@ -83,7 +83,7 @@ async def upload_and_analyze(
     per_chunk_candidates: int = Form(None),
     final_k: int = Form(None)
 ):
-    # اگر فرانت مقدار نداد از config بخوان
+
     if per_chunk_candidates is None:
         per_chunk_candidates = int(getattr(config, "PER_CHUNK_CANDIDATES", 2))
     if final_k is None:
@@ -138,19 +138,19 @@ async def ask_endpoint(
     query: str = Form(...),
     top_k: int = Form(5),
     history: Optional[str] = Form(None),
-    sid: Optional[str] = Form(None),     # ← جدید: شناسهٔ جلسه از فرانت
+    sid: Optional[str] = Form(None),
 ):
     qlog = (query or "")[:80].replace("\n", " ")
     logger.info(f"[ASK] query='{qlog}...' top_k={top_k} sid={sid or '-'}")
 
-    # مقدار پیش‌فرض
+
     default_answer: str = "نتوانستم پاسخ تولید کنم. لطفاً دوباره تلاش کنید یا پرسش را دقیق‌تر بیان کنید."
     empty_graph = {"elements": [], "kpis": {"sources": 0, "keywordCoverage": 0.0, "confidence": 0.0}}
 
     if not query or not query.strip():
         raise HTTPException(status_code=400, detail="Query is empty.")
 
-    # اگر ایندکس خالی است
+
     if store.index is None or store.index.ntotal == 0:
         try:
             graph = build_answer_graph(query, [], store, top_k=0)
@@ -163,7 +163,6 @@ async def ask_endpoint(
             "graph": graph,
         }
 
-    # تاریخچهٔ کوتاه همان قبلی — این فقط در پرامپت LLM مصرف می‌شود (در answer_with_context هم لحاظ می‌کنیم اگر بخواهیم)
     history_text = ""
     if history:
         try:
@@ -178,7 +177,6 @@ async def ask_endpoint(
         except Exception:
             pass
 
-    # --- پاسخ با زمینهٔ جلسه (اول محدود به اسناد جلسات قبل؛ در صورت نیاز broaden) ---
     try:
         out = answer_with_context(
             store=store,
@@ -192,19 +190,19 @@ async def ask_endpoint(
         used_doc_ids = set(out.get("used_doc_ids") or [])
     except Exception as e:
         logger.exception(f"[ASK] answer_with_context failed: {e}")
-        # اگر هر مشکلی در لایهٔ جدید بود، با گراف خالی برگرد
+
         return {"answer": default_answer, "citations": [], "graph": empty_graph}
 
-    # --- ساخت گراف بر اساس docهای استفاده شده (تا گراف با زمینهٔ جلسه هم‌راستا باشد) ---
+
     try:
-        # از همان docها دوباره یک رتریوال برای گراف می‌گیریم
+
         restrict: Optional[Set[int]] = used_doc_ids if used_doc_ids else None
         first_candidates = store.search_hybrid(
             query=query,
             vec_k=max(top_k * 3, config.VEC_K),
             bm25_k=max(top_k * 3, config.BM25_K),
             restrict_doc_ids=restrict,
-            allow_broaden=True,  # اگر چیزی نبود، باز کن تا گراف بی‌دلیل خالی نشود
+            allow_broaden=True,
         )
         reranked = _rerank_pairs(query, first_candidates, store, top_k)
         graph = build_answer_graph(query, reranked, store, top_k=top_k)
@@ -329,7 +327,7 @@ async def admin_upload_and_index(
 
     return {"ok": True, "indexed": out}
 
-# ---------- (اختیاری) اندپوینت‌های ادمین برای تریگر دستی ----
+
 @app.post("/admin/reembed")
 def admin_reembed(x_admin_token: str = Header(None)):
     if not x_admin_token or x_admin_token != config.ADMIN_TOKEN:

@@ -2,14 +2,269 @@
 @tailwind components;
 @tailwind utilities;
 
-/* RTL helpers */
+/* =========================
+   Font: IRANSans (self-host)
+   ========================= */
+@font-face{
+  font-family: "IRANSans";
+  src: url("/fonts/IRANSans.woff2") format("woff2"),
+       url("/fonts/IRANSans.woff") format("woff");
+  font-display: swap;
+  font-weight: 100 900;
+  font-style: normal;
+}
+
 html[dir="rtl"] .rtl,
 html[dir="rtl"] .prose { direction: rtl; text-align: right; }
 
-:root { color-scheme: light; }
+/* =========================
+   Theme Tokens (Light / Dark)
+   ========================= */
+:root {
+  /* Brand (دقیقاً طبق درخواست) */
+  --brand-red: rgb(214, 28, 47);
+  --brand-red-700: rgb(160, 20, 35);
+  --brand-blue: rgb(46, 140, 167);
+
+  /* Light palette */
+  --bg: #f6f7fb;
+  --surface: rgba(255,255,255,0.75);
+  --surface-2: rgba(255,255,255,0.6);
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: rgba(15,23,42,0.08);
+  --glass-border: rgba(255,255,255,0.35);
+  --shadow-lg: 0 10px 30px rgba(2, 8, 23, 0.12), 0 1px 0 rgba(255,255,255,.4) inset;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"]{
+  /* Dark palette */
+  --bg: #0b0b0f;
+  --surface: rgba(17,18,23,0.6);
+  --surface-2: rgba(21,24,35,0.55);
+  --text: #e6e8ee;
+  --muted: #9aa3b2;
+  --border: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.18);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.06) inset;
+
+  color-scheme: dark;
+}
+
+/* =========================
+   Base
+   ========================= */
+html {
+  /* پایه rem واکنش‌گرا (بین ~16.2 تا 18px) */
+  font-size: clamp(16.2px, 1.05vw + 14px, 18px);
+}
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IRANSans", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
     "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans",
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  font-weight: 400;
+  line-height: 1.7;
 }
+
+/* =========================
+   Typography System v2 (Unified)
+   — توکن‌ها و نگاشت کلاس‌ها برای یکنواختی سایزها
+   ========================= */
+:root{
+  --fs-xxs: 0.80rem;  /* timestamps/labels */
+  --fs-xs:  0.88rem;  /* small */
+  --fs-sm:  0.95rem;  /* slightly-smaller */
+  --fs-base:1.00rem;  /* base */
+  --fs-md:  1.06rem;  /* controls (inputs/buttons/tabs) */
+  --fs-lg:  1.18rem;  /* small headings */
+  --fs-xl:  1.35rem;  /* headings */
+  --fs-2xl: 1.60rem;  /* large headings */
+
+  --lh-tight: 1.35;
+  --lh-normal: 1.7;
+  --lh-relaxed: 1.9;
+}
+
+/* نگاشت کلاس‌های Tailwind رایج به توکن‌ها (بدون تغییر JSX) */
+.text-xs   { font-size: var(--fs-xxs) !important; line-height: var(--lh-normal) !important; }
+.text-sm   { font-size: var(--fs-sm)  !important; line-height: var(--lh-normal) !important; }
+.text-base { font-size: var(--fs-base)!important; line-height: var(--lh-normal) !important; }
+.text-lg   { font-size: var(--fs-lg)  !important; line-height: var(--lh-tight)  !important; }
+.text-xl   { font-size: var(--fs-xl)  !important; line-height: var(--lh-tight)  !important; }
+.text-2xl  { font-size: var(--fs-2xl) !important; line-height: var(--lh-tight)  !important; }
+
+/* تیترها */
+h1 { font-size: var(--fs-2xl); line-height: var(--lh-tight); font-weight: 700; }
+h2 { font-size: var(--fs-xl);  line-height: var(--lh-tight); font-weight: 700; }
+h3 { font-size: var(--fs-lg);  line-height: var(--lh-tight); font-weight: 700; }
+h4 { font-size: var(--fs-md);  line-height: var(--lh-tight); font-weight: 600; }
+h5, h6 { font-size: var(--fs-base); line-height: var(--lh-tight); font-weight: 600; }
+
+/* =========================
+   Utilities / Components
+   ========================= */
+@layer components {
+  .bg-app { background: var(--bg); }
+  .bg-card { background: var(--surface); }
+  .bg-card-2 { background: var(--surface-2); }
+  .text-primary { color: var(--text); }
+  .text-muted { color: var(--muted); }
+  .border-border { border-color: var(--border); }
+  .shadow-card { box-shadow: var(--shadow-lg); }
+
+  /* Glassmorphism */
+  .glass {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid var(--glass-border);
+  }
+  /* اعمال گلس روی کارت‌های قدیمی */
+  .shadow-card { backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
+  .bg-white.shadow-card { background: var(--surface); border: 1px solid var(--glass-border); }
+
+  /* Brand utils */
+  .brand-red    { color: var(--brand-red); }
+  .bg-brand-red { background-color: var(--brand-red); }
+  .btn-brand {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 transition;
+    background: linear-gradient(180deg, var(--brand-red), var(--brand-red-700));
+    color: #fff;
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--brand-red) 38%, transparent);
+    font-size: var(--fs-md);
+    line-height: var(--lh-tight);
+    border-radius: 0.9rem;
+    padding: 0.74rem 1.15rem;
+  }
+  .btn-brand:hover { filter: brightness(1.05); transform: translateY(-1px); }
+  .btn-brand:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-xl px-3 py-2 transition border;
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+    font-size: var(--fs-md);
+    line-height: var(--lh-tight);
+    border-radius: 0.9rem;
+    padding: 0.74rem 1.15rem;
+  }
+  .btn-ghost:hover { background: var(--surface-2); }
+
+  /* ورودی‌ها/سلکت/تکست‌اریا — یکنواخت */
+  .input, .select, .textarea {
+    @apply w-full rounded-xl border px-3 py-2 outline-none;
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text);
+    font-size: var(--fs-md);
+    line-height: var(--lh-tight);
+    border-radius: 0.9rem;
+    padding: 0.72rem 0.95rem;
+  }
+  .input:focus, .select:focus, .textarea:focus {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-blue) 30%, transparent);
+    border-color: var(--brand-blue);
+  }
+
+  /* جدول‌ها — اندازه و فاصله یکنواخت */
+  .table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .table thead th {
+    background: color-mix(in srgb, var(--surface) 70%, var(--brand-blue) 30%);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .table th, .table td {
+    font-size: var(--fs-base);
+    line-height: var(--lh-normal);
+    padding: 0.85rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .table tbody tr:hover { background: color-mix(in srgb, var(--surface) 85%, var(--brand-blue) 15%); }
+
+  .badge {
+    @apply inline-flex items-center rounded-lg px-2 py-0.5;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    line-height: var(--lh-tight);
+    border-radius: 0.7rem;
+    padding: 0.35rem 0.55rem;
+  }
+
+  /* Markdown – رنگ لینک‌ها آبی درخواستی + سایز یکنواخت */
+  .prose {
+    --tw-prose-body: var(--text);
+    --tw-prose-headings: var(--text);
+    --tw-prose-links: var(--brand-blue);
+    --tw-prose-bold: var(--text);
+    --tw-prose-counters: var(--muted);
+    --tw-prose-bullets: var(--muted);
+    --tw-prose-hr: var(--border);
+    --tw-prose-quotes: var(--text);
+    --tw-prose-quote-borders: var(--border);
+    --tw-prose-captions: var(--muted);
+    --tw-prose-code: var(--text);
+    --tw-prose-pre-code: #f8fafc;
+    --tw-prose-pre-bg: rgba(0,0,0,.65);
+    --tw-prose-th-borders: var(--border);
+    --tw-prose-td-borders: var(--border);
+  }
+
+  /* --- کلاس‌های سازگاری با کد قدیمی --- */
+  .bg-brand { background-color: var(--brand-red); }          /* قبلاً brand → قرمز جدید */
+  .hover\:bg-brand-dark:hover { background-color: var(--brand-red-700); }
+  .text-brand { color: var(--brand-blue); }                  /* متن‌های آبی → آبی جدید */
+}
+
+/* Tabs wrapper buttons — اندازه یکنواخت تب‌ها (بدون تغییر JSX) */
+.bg-card.p-2.rounded-2xl.shadow-card.border.border-border > button {
+  font-size: var(--fs-md);
+  line-height: var(--lh-tight);
+  padding: 0.66rem 1rem;
+  border-radius: 0.9rem;
+}
+
+/* Slider thumb ها */
+input[type="range"] { height: 2.1rem; }
+input[type="range"]::-webkit-slider-thumb,
+input[type="range"]::-moz-range-thumb {
+  width: 1rem; height: 1rem; border-radius: 999px;
+}
+
+/* کارت‌ها و پنل‌ها – پدینگ یکنواخت */
+.rounded-2xl.p-6,
+.rounded-2xl.p-5,
+.rounded-2xl.p-4 {
+  padding: clamp(1rem, 1vw + 0.7rem, 1.5rem);
+}
+
+/* Markdown اندازه‌ها */
+.prose :where(p, li) { font-size: var(--fs-base); line-height: var(--lh-relaxed); }
+.prose :where(h1) { font-size: var(--fs-2xl); line-height: var(--lh-tight); }
+.prose :where(h2) { font-size: var(--fs-xl);  line-height: var(--lh-tight); }
+.prose :where(h3) { font-size: var(--fs-lg);  line-height: var(--lh-tight); }
+.prose :where(code) { font-size: 0.92em; }
+.prose :where(pre)  { font-size: 0.92em; line-height: 1.6; }
+
+/* کوچک‌ترین نوشته‌های ریز (timestamps/hints) را هم به حداقل استاندارد می‌آوریم */
+.text-[11px] { font-size: var(--fs-xxs) !important; line-height: var(--lh-normal) !important; }
+
+/* اسکرول‌بار */
+* { scrollbar-width: thin; scrollbar-color: var(--brand-red) var(--surface-2); }
+*::-webkit-scrollbar { height: 10px; width: 10px; }
+*::-webkit-scrollbar-track { background: var(--surface-2); }
+*::-webkit-scrollbar-thumb { background: var(--brand-red); border-radius: 10px; }

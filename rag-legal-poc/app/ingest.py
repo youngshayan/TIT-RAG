@@ -50,12 +50,7 @@ def _split_by_legal_structure(text: str):
     return chunks
 
 def _build_chunks(text: str) -> List[str]:
-    """
-    استراتژی ترکیبی:
-      - اگر ساختار حقوقی (ماده/تبصره/بند) تشخیص داده شد، هر بخش را جداگانه
-        با window توکنی ۶۵۰/overlap ۹۰ خرد می‌کنیم.
-      - در غیر این صورت، کل متن را با همان پنجرهٔ توکنی می‌بریم.
-    """
+
     tokens = int(getattr(config, "CHUNK_TOKENS", 650))
     overlap = int(getattr(config, "CHUNK_OVERLAP", 90))
 
@@ -79,5 +74,5 @@ def ingest_file(store: Store, file_path: Path, title: str = None) -> int:
     full_text = _load_text_from_path(file_path)
     chunks = _build_chunks(full_text)
     doc_id = store.add_document_with_chunks(title or file_path.stem, file_path, chunks, full_text)
-    store.index_doc(doc_id)  # اینجا هم chunk-level و هم doc-level ایندکس می‌شود
+    store.index_doc(doc_id)
     return doc_id

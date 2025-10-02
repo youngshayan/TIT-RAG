@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import Markdown from "./Markdown";
 import GraphView from "./GraphView";
 
-/** --- ErrorBoundary: جلوی سفید شدن صفحه را می‌گیرد --- */
+
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: any }> {
   constructor(props: any) {
     super(props);
@@ -19,9 +19,9 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
   render() {
     if (this.state.err) {
       return (
-        <div className="p-4 border rounded-xl bg-red-50 text-red-700">
+        <div className="p-4 border border-border rounded-xl bg-card-2 text-red-300">
           <div className="font-semibold mb-1">✖ خطا در نمایش محتوا</div>
-          <div className="text-sm">جزئیات خطا در کنسول مرورگر ثبت شد.</div>
+          <div className="text-sm text-muted">جزئیات خطا در کنسول مرورگر ثبت شد.</div>
         </div>
       );
     }
@@ -160,7 +160,6 @@ function sanitizeElements(elList: any[]): CytoscapeElement[] {
     }
   }
 
-  // حذف یال‌هایی که به نودهای ناموجود وصل‌اند
   const nodeIds = new Set(nodes.map((n) => n.data.id));
   const filteredEdges = edges.filter((e) => nodeIds.has(e.data.source) && nodeIds.has(e.data.target));
 
@@ -198,7 +197,6 @@ function persistHistory(question: string, answer: any) {
   } catch {}
 }
 
-// ---- Component ----
 export default function ChatPanel() {
   const [q, setQ] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -242,7 +240,7 @@ export default function ChatPanel() {
       if (safeGraph.elements.length > 0) setLastGraph(safeGraph);
       else setLastGraph(null);
 
-      (window as any).__debugLastGraph = safeGraph; // دیباگ اختیاری
+      (window as any).__debugLastGraph = safeGraph;
 
       persistHistory(text, data);
     } catch (e: any) {
@@ -260,10 +258,10 @@ export default function ChatPanel() {
     }
     return (
       <ErrorBoundary>
-        <div className="mt-4 border rounded-2xl p-4">
+        <div className="mt-4 border border-border rounded-2xl p-4 bg-card">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold">نقشهٔ استدلال پاسخ</h3>
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-muted">
               منابع: {lastGraph.kpis?.sources ?? 0} • پوشش کلیدواژه:{" "}
               {typeof lastGraph.kpis?.keywordCoverage === "number"
                 ? `${Math.round(lastGraph.kpis.keywordCoverage * 100)}%`
@@ -274,7 +272,6 @@ export default function ChatPanel() {
                 : "—"}
             </div>
           </div>
-          {/* GraphView فقط با دادهٔ سالم رندر می‌شود */}
           <GraphView data={lastGraph as any} height={360} />
         </div>
       </ErrorBoundary>
@@ -284,20 +281,20 @@ export default function ChatPanel() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* پرسش */}
-      <div className="bg-white rounded-2xl shadow-card p-6 lg:col-span-1">
+      <div className="bg-card rounded-2xl shadow-card p-6 lg:col-span-1 border border-border">
         <h2 className="text-lg font-semibold mb-4">🔎 پرسش</h2>
         <textarea
-          className="w-full h-40 border rounded-xl p-3"
-          placeholder="مثلاً: شرایط حداقل موجودی حساب جاری چیست؟"
+          className="textarea h-40"
+          placeholder="مثلاً: اختیارات کمیته ریسک چیست؟"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <div className="flex items-center gap-3 mt-3 text-xs text-slate-600">
+        <div className="flex items-center gap-3 mt-3 text-xs text-muted">
           <label>
             top_k:
             <input
               type="number"
-              className="ml-2 border rounded px-2 py-1 w-16"
+              className="input ml-2 w-20 inline-block"
               value={topK}
               min={1}
               onChange={(e) => setTopK(+e.target.value || 5)}
@@ -308,7 +305,7 @@ export default function ChatPanel() {
           <button
             onClick={onAsk}
             disabled={busy}
-            className="px-5 py-2 rounded-xl bg-brand text-white hover:bg-brand-dark transition disabled:opacity-50"
+            className="btn-brand"
           >
             {busy ? "در حال جست‌وجو..." : "بپرس"}
           </button>
@@ -316,19 +313,19 @@ export default function ChatPanel() {
       </div>
 
       {/* گفتگو + گراف */}
-      <div className="bg-white rounded-2xl shadow-card p-6 lg:col-span-2">
+      <div className="bg-card rounded-2xl shadow-card p-6 lg:col-span-2 border border-border">
         <h2 className="text-lg font-semibold mb-4">💬 گفتگو</h2>
 
         {!msgs.length ? (
-          <p className="text-slate-500">گفتگویی شروع نشده است.</p>
+          <p className="text-muted">گفتگویی شروع نشده است.</p>
         ) : (
           <div className="space-y-4">
             {msgs.map((m, i) => (
               <div
                 key={i}
-                className={`rounded-2xl p-4 ${m.role === "user" ? "bg-slate-100" : "bg-white border"}`}
+                className={`rounded-2xl p-4 border border-border ${m.role === "user" ? "bg-card-2" : "bg-card"}`}
               >
-                <div className="text-xs text-slate-500 mb-2">
+                <div className="text-xs text-muted mb-2">
                   {m.role === "user" ? "کاربر" : "دستیار"} •{" "}
                   {new Date(m.ts).toLocaleString("fa-IR")}
                 </div>

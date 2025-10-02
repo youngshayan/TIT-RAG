@@ -13,7 +13,7 @@ logger = logging.getLogger("rag.llm")
 
 
 def _try_decode_json(resp: requests.Response) -> Optional[dict]:
-    """سعی کن JSON را حتی با خروجی فشرده/خراب هدر برگردانی."""
+
     try:
         return resp.json()
     except Exception:
@@ -65,19 +65,19 @@ def _try_decode_json(resp: requests.Response) -> Optional[dict]:
 
 class ChatClient:
     def __init__(self):
-        # Primary (Arvan OpenAI-compatible endpoint - ما دستی /chat/completions می‌زنیم)
+
         self.primary = {
             "name": "gpt4o-mini",
-            "endpoint": config.GPT4O_ENDPOINT,   # باید خودش /v1/chat/completions داشته باشد
+            "endpoint": config.GPT4O_ENDPOINT,
             "api_key": config.GPT4O_API_KEY,
             "model":   config.GPT4O_MODEL,
         }
         # Backup (AvalAI via OpenAI SDK)
         self.backup = {
             "name": "avalai",
-            "endpoint": config.DEEPSEEK_ENDPOINT,  # مثل: https://api.avalai.ir/v1
+            "endpoint": config.DEEPSEEK_ENDPOINT,
             "api_key": config.DEEPSEEK_API_KEY,
-            "model":   config.DEEPSEEK_MODEL,      # مثلا: gpt-4.1 (یا هر مدلی که اونجا سِت کردی)
+            "model":   config.DEEPSEEK_MODEL,
         }
 
         self.temperature = float(getattr(config, "LLM_TEMPERATURE", 0.2))
@@ -165,9 +165,7 @@ class ChatClient:
 
     # ---------- BACKUP (OpenAI SDK over AvalAI) ----------
     def _once_backup(self, system: str, user: str) -> Optional[str]:
-        """
-        AvalAI را با OpenAI SDK صدا می‌زنیم (base_url = e.g. https://api.avalai.ir/v1).
-        """
+
         try:
             from openai import OpenAI
         except Exception as e:
@@ -177,10 +175,10 @@ class ChatClient:
         try:
             client = OpenAI(
                 api_key=self.backup["api_key"],
-                base_url=self.backup["endpoint"],  # مثلا https://api.avalai.ir/v1
+                base_url=self.backup["endpoint"],
             )
 
-            # timeout روی کلاینت
+
             client = client.with_options(timeout=self.default_timeout)
 
             messages = [
@@ -191,7 +189,7 @@ class ChatClient:
             resp = client.chat.completions.create(
                 model=self.backup["model"],
                 messages=messages,
-                max_tokens=min(self.max_tokens, 1500),  # سقف منطقی
+                max_tokens=min(self.max_tokens, 1500),
                 temperature=self.temperature,
                 top_p=0.9,
             )

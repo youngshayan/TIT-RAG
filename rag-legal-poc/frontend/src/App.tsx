@@ -1,3 +1,4 @@
+// frontend/src/App.tsx
 import React, { useEffect, useState } from "react";
 import Tabs from "./components/Tabs";
 import UploadAnalyze from "./components/UploadAnalyze";
@@ -13,6 +14,16 @@ export default function App(){
   const [tab, setTab] = useState<TabKey>("analyze");
   const [server, setServer] = useState<any>(null);
   const [serverErr, setServerErr] = useState<string | null>(null);
+
+  // Theme
+  const [theme, setTheme] = useState<"light"|"dark">(
+    (localStorage.getItem("theme") as any) || "dark"
+  );
+  useEffect(()=>{
+    if (theme === "dark") document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   useEffect(()=>{
     (async ()=>{
@@ -30,21 +41,47 @@ export default function App(){
   },[]);
 
   return (
-    <div className="min-h-screen">
-      <header className="bg-white border-b">
+    <div className="min-h-screen bg-app text-primary">
+      <header className="border-b border-border sticky top-0 z-10 bg-card backdrop-blur glass">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-brand/10 flex items-center justify-center text-brand font-bold">R</div>
+          {/* ناحیه لوگوها + عنوان */}
+          <div className="flex items-center gap-4">
+            {/* لوگوی اصلی: کمی بزرگ‌تر از قبل */}
+            {/* مسیر: public/logo.png */}
+            <img
+              src="/logo.png"
+              alt="Logo"
+              className="w-18 h-14 rounded-2xl object-contain border border-border"
+            />
+            {/* لوگوی دوم: هم‌سایز نسخهٔ قبلی (تقریباً 40px) */}
+            {/* مسیر: public/logo-2.png  (اختیاری؛ اگر فایل نبود، مخفی می‌ماند) */}
+            <img
+              src="/logo-2.png"
+              alt="Second Logo"
+              onError={(e)=>{ (e.currentTarget as HTMLImageElement).style.display='none'; }}
+              className="w-14 h-18 rounded-xl object-contain border border-border"
+            />
+
             <div>
-              <div className="font-semibold">RAG Legal Assistant</div>
-              <div className="text-xs text-slate-500">بانکی | فارسی | PoC</div>
+              <div className="font-semibold">Inteligent instruction hub</div>
+              <div className="text-xs text-muted">بانکی | فارسی | PoC</div>
             </div>
           </div>
-          <div className="text-xs text-slate-500 hidden sm:flex flex-col items-end">
-            <div>API: <b>{API_BASE}</b></div>
-            {server
-              ? <div>Server: <b>{server.index_rows}</b> rows</div>
-              : <div>Server: <b>n/a</b> {serverErr ? <span className="text-red-500">({serverErr})</span> : null}</div>}
+
+          <div className="flex items-center gap-4">
+            <div className="text-xs text-muted hidden sm:flex flex-col items-end">
+              <div>API: <b className="brand-red">{API_BASE}</b></div>
+              {server
+                ? <div>Server: <b className="brand-red">{server.index_rows}</b> rows</div>
+                : <div>Server: <b>n/a</b> {serverErr ? <span className="brand-red">({serverErr})</span> : null}</div>}
+            </div>
+            <button
+              onClick={()=> setTheme(t=> t==="dark" ? "light" : "dark")}
+              className="btn-ghost"
+              title="تغییر تم"
+            >
+              {theme==="dark" ? "☀️ Light" : "🌙 Dark"}
+            </button>
           </div>
         </div>
       </header>
@@ -57,7 +94,7 @@ export default function App(){
         {tab==="admin" && <AdminPanel />}
       </main>
 
-      <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-slate-500">
+      <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-muted">
         ساخته‌شده برایMindSol Team - PoC ©
       </footer>
 

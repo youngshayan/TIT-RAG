@@ -46,13 +46,13 @@ class Store:
 
         # ------------- Chunk-level FAISS + mapping -------------
         self.index: Optional[faiss.Index] = None
-        self.id_to_chunk: Dict[int, int] = {}  # faiss vec-id -> chunk_id
+        self.id_to_chunk: Dict[int, int] = {}
         self._load_faiss()
         self._ensure_idmap()
 
         # ------------- Doc-level FAISS + mapping (NEW) -------------
         self.doc_index: Optional[faiss.Index] = None
-        self.doc_idmap: Dict[int, int] = {}   # faiss vec-id -> document_id
+        self.doc_idmap: Dict[int, int] = {}
         self._load_doc_faiss()
         self._ensure_doc_idmap()
 
@@ -269,12 +269,7 @@ class Store:
         return normalize_persian(raw)[:3000]  # کوتاه و کافی
 
     def index_doc(self, doc_id: int):
-        """
-        - چانک‌ها را از DB می‌خواند
-        - Chunk-level: با prefix 'passage: ' امبد می‌کند و به FAISS اضافه می‌کند
-        - Doc-level: یک بردار نماینده برای سند می‌سازد و در Doc-FAISS ذخیره می‌کند (NEW)
-        - BM25 را آپدیت می‌کند
-        """
+
         chunks = self.get_doc_chunks(doc_id)
         if not chunks:
             return
@@ -311,10 +306,7 @@ class Store:
 
     # ---------------------- Hybrid Search (with Doc prefilter) ----------------------
     def _prefilter_docs(self, qn: str, m: int = 12) -> set[int]:
-        """
-        Doc-level shortlist با FAISS (نمایندهٔ سند).
-        خروجی: مجموعهٔ doc_id های منتخب (حداکثر m).
-        """
+
         if self.doc_index is None or self.doc_index.ntotal == 0:
             return set()
         qv = self.model.encode([f"query: {qn}"], normalize_embeddings=True, convert_to_numpy=True).astype("float32")
@@ -336,12 +328,7 @@ class Store:
         restrict_doc_ids: Optional[Set[int]] = None,
         allow_broaden: bool = False,
     ) -> List[Tuple[int, float, str]]:
-        """
-        جریان:
-          1) Doc-level shortlist (m≈8–12)
-          2) Vector + BM25 (chunk-level) — در صورت وجود restrict_doc_ids به آن محدود می‌شود
-          3) اگر محدودسازی نتیجه نداد و allow_broaden=True بود، محدودیت برداشته می‌شود
-        """
+
         def _run(vec_k_val: int, bm25_k_val: int, restrict: Optional[Set[int]]) -> List[Tuple[int, float, str]]:
             out: List[Tuple[int, float, str]] = []
             qn = normalize_persian(query or "")
@@ -402,12 +389,11 @@ class Store:
                           key=lambda x: -x[1])
             return out2
 
-        # اجرای محدود (در صورت وجود restrict_doc_ids)
+
         first = _run(vec_k, bm25_k, restrict_doc_ids)
         if first or not allow_broaden:
             return first[: max(vec_k, bm25_k)]
 
-        # اگر محدود بود و چیزی نداد و اجازهٔ broaden داریم: دوباره بدون محدودیت
         widened = _run(vec_k, bm25_k, restrict=None)
         return widened[: max(vec_k, bm25_k)]
 
@@ -426,19 +412,14 @@ class Store:
 
     # ---------------------- Re-embed all (fresh build) ----------------------
     def rebuild_all_indexes_from_db(self, text_prefix: str = "passage: ", normalize_fn=None):
-        """
-        کل چانک‌ها و سندها را از sqlite می‌خواند و:
-         - Doc-level FAISS را از نو می‌سازد (نمایندهٔ سند)
-         - Chunk-level FAISS را از نو می‌سازد
-         - BM25 را از نو می‌سازد
-        """
+
         with Session(self.engine) as s:
             stmt = select(Chunk.id, Chunk.text, Chunk.doc_id).order_by(Chunk.id.asc())
             rows = list(s.exec(stmt))
             docs_stmt = select(Document).order_by(Document.id.asc())
             docs = list(s.exec(docs_stmt))
         if not rows:
-            # همه را خالی کن
+
             self._reset_faiss()
             self._reset_doc_faiss()
             self._reset_bm25()
@@ -476,7 +457,7 @@ class Store:
         doc_vecs = []
         doc_ids = []
         for d in docs:
-            # نمایندهٔ سند: عنوان + دو چانک اول
+
             first_two_texts: List[str] = []
             for cid in docid_to_chunks.get(d.id, [])[:2]:
                 ct = next((t for (ccid, t, _did) in rows if ccid == cid), "")
@@ -505,10 +486,7 @@ class Store:
 
     # ---------------------- Nuclear reset (wipe all) ----------------------
     def reset_all(self):
-        """
-        همه‌چیز را پاک می‌کند: sqlite جداول، faiss ها، bm25.
-        بعد از این، خودکار DB را خالی می‌سازد.
-        """
+
         # drop tables
         try:
             SQLModel.metadata.drop_all(self.engine)

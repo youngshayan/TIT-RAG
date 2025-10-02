@@ -17,11 +17,7 @@ logger = logging.getLogger("rag.email")
 # SMTP Connection Helpers
 # -------------------------
 def _connect_smtp(host: str, port: int, user: str, passwd: str, timeout: float = 20.0):
-    """
-    اتصال امن به SMTP:
-      - اگر پورت 465 باشد: SMTPS (SSL) مستقیم
-      - در غیر این صورت (مثل 587): STARTTLS
-    """
+
     ctx = ssl.create_default_context()
 
     if int(port) == 465:
@@ -41,8 +37,8 @@ def _connect_smtp(host: str, port: int, user: str, passwd: str, timeout: float =
 # -------------------------
 # HTML Templating
 # -------------------------
-_BRAND_BG = "#0b3a6a"  # سرمه‌ای
-_ACCENT    = "#1e88e5"  # آبی
+_BRAND_BG = "#0b3a6a"
+_ACCENT    = "#1e88e5"
 _BORDER    = "#e2e8f0"
 _TEXT      = "#0f172a"
 _MUTED     = "#475569"
@@ -51,14 +47,12 @@ def _escape_html(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
 
 def _to_html(body: str) -> str:
-    """متن ساده را به HTML امن و خوانا تبدیل می‌کند (تبدیل \n به <br>)."""
+
     safe = _escape_html(body or "").replace("\n", "<br>")
     return safe
 
 def _build_html_email(subject: str, body_text: str, from_name: str) -> str:
-    """
-    یک قالب HTML تمیز و واکنش‌گرا برای ایمیل می‌سازد.
-    """
+
     body_html = _to_html(body_text)
 
     return f"""\
@@ -142,13 +136,7 @@ def _build_html_email(subject: str, body_text: str, from_name: str) -> str:
 # Public API (backward compatible)
 # -------------------------
 def send_email(subject: str, body: str, recipients: List[str], from_name: str = "RAG Legal Bot") -> bool:
-    """
-    ارسال ایمیل حرفه‌ای:
-      - Multipart/Alternative: هم متن ساده، هم HTML
-      - اتصال امن (SMTPS/STARTTLS)
-      - لاگ استاندارد و یکبار retry در خطاهای موقتی
-    امضای تابع بدون تغییر مانده تا جاهای دیگر پروژه نشکند.
-    """
+
     recipients = [r.strip() for r in (recipients or []) if r and r.strip()]
     if not recipients:
         logger.warning("[EMAIL] no recipients provided")
@@ -156,23 +144,23 @@ def send_email(subject: str, body: str, recipients: List[str], from_name: str = 
 
     sender_email = config.SMTP_FROM or config.SMTP_USER or "no-reply@example.com"
 
-    # پیام چندبخشی: متن ساده + HTML
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject or ""
     msg["From"] = formataddr((from_name, sender_email))
     msg["To"] = ", ".join(recipients)
 
-    # نسخهٔ متن ساده (fallback برای کلاینت‌های قدیمی)
+
     text_part = MIMEText(body or "", "plain", _charset="utf-8")
 
-    # نسخهٔ HTML شیک
+
     html_str = _build_html_email(subject=subject or "", body_text=body or "", from_name=from_name or "")
     html_part = MIMEText(html_str, "html", _charset="utf-8")
 
     msg.attach(text_part)
     msg.attach(html_part)
 
-    # تلاش برای ارسال با یک بار retry در خطاهای موقتی
+
     def _try_send() -> bool:
         try:
             server = _connect_smtp(
@@ -197,7 +185,7 @@ def send_email(subject: str, body: str, recipients: List[str], from_name: str = 
 
     ok = _try_send()
     if not ok:
-        # یک بار تلاش مجدد
+
         logger.info("[EMAIL] retrying once...")
         ok = _try_send()
 

@@ -15,7 +15,7 @@ from app import config
 logger = logging.getLogger("rag.retrieval")
 
 # ----------------------------------------------------
-# تنظیمات/پیش‌فرض‌ها
+
 # ----------------------------------------------------
 _AVALAI_API_KEY = getattr(config, "AVALAI_API_KEY", "")
 _AVALAI_BASE_URL = getattr(config, "AVALAI_BASE_URL", "https://api.avalai.ir/v1")
@@ -94,8 +94,7 @@ class AvalAIService:
                 return list(range(min(top_k, len(documents))))
             data = resp.json()
             results = data.get("results") or []
-            # هر result مثل {'index': i, 'relevance_score': ...}
-            # ترتیب خروجی results بهینه است؛ همان ترتیب را برگردانیم
+
             order = [int(r.get("index", i)) for i, r in enumerate(results)]
             if not order:
                 order = list(range(min(top_k, len(documents))))
@@ -132,7 +131,7 @@ def summarize_text(chatter: ChatClient, text: str, extracted_meta: Dict[str, Any
 
 
 # ----------------------------------------------------
-# Hybrid محلی (روی کاندیدهای استور، نه کل کورپوس)
+
 # ----------------------------------------------------
 _HAS_SKLEARN = True
 _HAS_BM25 = True
@@ -150,11 +149,7 @@ except Exception:
 
 
 def _local_hybrid_rank(query: str, texts: List[str]) -> List[int]:
-    """
-    روی لیست کوچکی از متن‌ها (کاندیدهای اولیه از استور)، امتیاز Hybrid = 0.6*BM25 + 0.4*TFIDF
-    برمی‌گرداند ترتیب ایندکس‌ها به‌صورت نزولی.
-    اگر sklearn یا rank-bm25 نباشد، ترتیب اولیه حفظ می‌شود.
-    """
+
     n = len(texts)
     if n == 0:
         return []
@@ -181,23 +176,16 @@ def _local_hybrid_rank(query: str, texts: List[str]) -> List[int]:
 
 
 # ----------------------------------------------------
-# رِرَنک نهایی: Hybrid محلی + AvalAI Cohere رِرَنک
+
 # ----------------------------------------------------
 def _rerank_pairs(query: str, candidates: List[Tuple[int, float, str]], store: Store, top_n: int) -> List[Tuple[int, float, str]]:
-    """
-    ورودی candidates همان خروجی اولیهٔ store.search_hybrid است [(chunk_id, score, tag), ...].
-    این تابع:
-      1) حداکثر K0 کاندید اول را می‌گیرد.
-      2) Hybrid محلی (BM25+TF-IDF) را روی متن همین کاندیدها اجرا می‌کند → K1 تای برتر.
-      3) این K1 را به AvalAI Cohere Rerank می‌فرستد → ترتیب نهایی.
-      4) top_n اول را برمی‌گرداند (با همان tuple ساختار اصلی).
-    """
+
     if not candidates:
         return []
 
-    # K0: محدود کردن حجم اولیه برای سرعت
+
     pool = candidates[:max(top_n * 5, _LOCAL_HYBRID_CAND_K)]
-    # متن هر chunk
+
     texts: List[str] = []
     rows: List[Tuple[int, float, str]] = []
     for cid, sc, tag in pool:
@@ -210,25 +198,25 @@ def _rerank_pairs(query: str, candidates: List[Tuple[int, float, str]], store: S
     if not rows:
         return []
 
-    # مرحله Hybrid محلی
-    order_local = _local_hybrid_rank(query, texts)  # ایندکس‌های rows/texts
+
+    order_local = _local_hybrid_rank(query, texts)
     k1 = min(len(order_local), max(top_n * 2, _LOCAL_HYBRID_TOP_K))
     order_local_top = order_local[:k1]
 
-    # آماده برای AvalAI
+
     texts_top = [texts[i] for i in order_local_top]
-    # خروجی AvalAI: ترتیب ایندکس داخل texts_top
+
     order_final_local_idx = AvalAIService.rerank_documents(query, texts_top, top_k=k1)
-    # نگاشت به ایندکس rows اصلی
+
     final_rows_indices = [order_local_top[i] for i in order_final_local_idx if 0 <= i < k1]
 
-    # تبدیل back به [(cid, sc, tag), ...]
+
     final_rows = [rows[i] for i in final_rows_indices][:top_n]
     return final_rows
 
 
 # ----------------------------------------------------
-# تعارض / تحلیل (مثل قبل)
+
 # ----------------------------------------------------
 def _pick_segments_evenly(chunks: List[Any], limit: int) -> List[str]:
     clean = []
@@ -249,7 +237,7 @@ def _pick_segments_evenly(chunks: List[Any], limit: int) -> List[str]:
 def find_conflicts_against_index(
     store: Store,
     chatter: ChatClient,
-    uploaded_chunks: List[Any],   # list[str] یا list[{"text": str}]
+    uploaded_chunks: List[Any],
     uploaded_meta: Dict[str, Any],
     per_chunk_candidates: int = None,
     final_k: int = None
@@ -266,7 +254,7 @@ def find_conflicts_against_index(
     collected: List[Tuple[int, float, str]] = []
     for seg_text in candidate_segments:
         hits = store.search_hybrid(seg_text, vec_k=config.VEC_K, bm25_k=config.BM25_K)
-        # اینجا هم از ریرنک جدید استفاده کنیم، اما خروجی محدود (per_chunk_candidates)
+
         hits = _rerank_pairs(seg_text, hits, store, per_chunk_candidates)
         collected.extend(hits)
 
@@ -331,7 +319,7 @@ def find_conflicts_against_index(
 
 
 # ----------------------------------------------------
-# پاسخ با زمینهٔ جلسه (جلسه‌محور)
+
 # ----------------------------------------------------
 def answer_with_context(
     store: Store,
@@ -340,24 +328,18 @@ def answer_with_context(
     top_k: int = 6,
     sid: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    اگر sid داده شود:
-      - ابتدا فقط داخل اسنادِ استفاده‌شدهٔ قبلی (همان sid) جست‌وجو می‌کند.
-      - اگر چیزی نبود، با allow_broaden=True جست‌وجو گسترده می‌شود.
-      - هر سندی که در پاسخ نهایی استفاده شد به set مربوط به sid افزوده می‌شود.
-    خروجی: { answer, citations, used_doc_ids }
-    """
+
     used_doc_ids_session: Set[int] = set()
     if sid:
         used_doc_ids_session = _SESSION_USED_DOCS.get(sid, set())
 
-    # مرحلهٔ جست‌وجو
+
     first_candidates = store.search_hybrid(
         query=question,
         vec_k=max(top_k * 3, config.VEC_K),
         bm25_k=max(top_k * 3, config.BM25_K),
         restrict_doc_ids=(used_doc_ids_session if used_doc_ids_session else None),
-        allow_broaden=True,  # اگر در محدودهٔ جلسه چیزی نبود، خودش باز می‌شود
+        allow_broaden=True,
     )
     reranked = _rerank_pairs(question, first_candidates, store, top_k)
 

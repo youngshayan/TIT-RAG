@@ -16,7 +16,7 @@ export default class ErrorBoundary extends React.Component<React.PropsWithChildr
   render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-xl border p-3 text-sm text-red-700 bg-red-50">
+        <div className="rounded-xl border border-border p-3 text-sm text-red-300 bg-card-2">
           مشکلی در رندر گراف پیش آمد.
         </div>
       );
