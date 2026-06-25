@@ -1,6 +1,4 @@
 # app/pdf_to_text_hook.py
-
-
 from pathlib import Path
 import pdfplumber
 from pypdf import PdfReader

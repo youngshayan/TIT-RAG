@@ -9,31 +9,35 @@ import json
 from pathlib import Path
 
 from app.store import Store
+from app import config
 
 # -----------------------------
 # Utilities
 # -----------------------------
 
-_FA_STOPWORDS = {
-    "از","با","به","در","و","را","که","برای","یا","تا","این","آن","بین","بر","طبق","طبقِ",
-    "می","های","خواهند","خواهد","کرد","شود","شده","بود","بودن","نیست","است","هست","هم","اما",
-    "همچنین","بنابراین","باید","نباید","اگر","اگرچه","مثل","مانند","کلیه","کلاً","کل","هر","هیچ",
-    "پس","قبل","بعد","ضمن","بدون","برابر","مطابق","موضوع","تبصره","ماده","مواد","پیوست","پیوست‌ها",
-    "صرفاً","صرفا","حداکثر","حداقل","اعم","غیر","تمامی","کلیهٔ","آن‌ها","آنها","ایشان",
-}
-_EN_STOPWORDS = {
-    "a","an","the","and","or","but","for","to","of","in","on","at","by","from","with","as",
-    "is","are","was","were","be","been","being","this","that","these","those","it","its","their","there",
-    "can","could","should","would","may","might","must","shall","will","do","does","did",
-}
-STOPWORDS = _FA_STOPWORDS.union(_EN_STOPWORDS)
+if config.LANGUAGE == "en":
+    _STOPWORDS = {
+        "a","an","the","and","or","but","for","to","of","in","on","at","by","from","with","as",
+        "is","are","was","were","be","been","being","this","that","these","those","it","its","their","there",
+        "can","could","should","would","may","might","must","shall","will","do","does","did",
+        "have","has","had","than","then","hence","thus","hence","accordingly","consequently",
+        "so","nor","yet","also","etc","e.g","i.e","et al","etc."
+    }
+else:
+    _STOPWORDS = {
+        "از","با","به","در","و","را","که","برای","یا","تا","این","آن","بین","بر","طبق","طبقِ",
+        "می","های","خواهند","خواهد","کرد","شود","شده","بود","بودن","نیست","است","هست","هم","اما",
+        "همچنین","بنابراین","باید","نباید","اگر","اگرچه","مثل","مانند","کلیه","کلاً","کل","هر","هیچ",
+        "پس","قبل","بعد","ضمن","بدون","برابر","مطابق","موضوع","تبصره","ماده","مواد","پیوست","پیوست‌ها",
+        "صرفاً","صرفا","حداکثر","حداقل","اعم","غیر","تمامی","کلیهٔ","آن‌ها","آنها","ایشان",
+    }
 
 TOKEN_RE = re.compile(r"[0-9A-Za-z\u0600-\u06FF]+", re.UNICODE)
 
 def _tokens(text: str) -> List[str]:
     if not text:
         return []
-    return [t for t in TOKEN_RE.findall(text.lower()) if t not in STOPWORDS and len(t) >= 2]
+    return [t for t in TOKEN_RE.findall(text.lower()) if t not in _STOPWORDS and len(t) >= 2]
 
 def _top_keywords(text: str, max_kw: int = 8) -> List[str]:
     toks = _tokens(text)
@@ -47,7 +51,7 @@ def _top_keywords(text: str, max_kw: int = 8) -> List[str]:
     big: Dict[str, int] = {}
     for i in range(len(toks) - 1):
         a, b = toks[i], toks[i + 1]
-        if a in STOPWORDS or b in STOPWORDS:
+        if a in _STOPWORDS or b in _STOPWORDS:
             continue
         bg = f"{a} {b}"
         big[bg] = big.get(bg, 0) + 1
@@ -135,7 +139,7 @@ class GraphNode:
     type: str  # query | keyword | chunk | doc
     score: float = 0.0
     classes: str = ""
-    extra: Dict[str, Any] = field(default_factory=dict)  # <<— برای داده‌های بیشتر
+    extra: Dict[str, Any] = field(default_factory=dict)
 
     def to_cy(self) -> Dict[str, Any]:
         data = {
@@ -240,7 +244,6 @@ def build_answer_graph(
                 )
             edges.append(GraphEdge(id=f"e_ref_{cid}_{doc.id}", source=ch_id, target=doc_id, etype="ref", weight=1.0, label="ref"))
 
-            # همچنین chunk را به همان اطلاعات سند غنی کنیم (برای پنل جزئیات)
             nodes[ch_id].extra.update({
                 "docId": doc.id,
                 "docTitle": (doc.title or ""),

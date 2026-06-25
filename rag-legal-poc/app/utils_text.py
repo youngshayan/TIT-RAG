@@ -1,27 +1,25 @@
+# app/utils_text.py
 import re
 import unicodedata
+from app import config
 
 _arabic_to_persian = str.maketrans("كي", "کی")
+
 
 def normalize_persian(text: str) -> str:
     if not text:
         return ""
 
     text = unicodedata.normalize("NFKC", text)
-
     text = text.translate(_arabic_to_persian)
-
     text = "".join(
         ch for ch in text
         if (ch in ("\n", "\r", "\t") or ch == "\u200C" or ord(ch) >= 32)
     )
-
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\s+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-
     text = re.sub(r"\s+([,،:؛\.\?!)])", r"\1", text)
-
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text.strip()
 
@@ -38,6 +36,7 @@ LETTER_WITH_SPACES_PATTERN = re.compile(
     flags=re.UNICODE
 )
 SINGLE_ARABIC_CHAR = re.compile(rf"^[{ARABIC_RANGES}]$")
+
 
 def repair_spaced_letters(text: str) -> str:
     lines = text.splitlines()
@@ -65,8 +64,51 @@ def repair_spaced_letters(text: str) -> str:
     def _collapse_match(m):
         s = m.group(0)
         return re.sub(r"\s+", "", s)
-    text = LETTER_WITH_SPACES_PATTERN.sub(_collapse_match, text)
 
+    text = LETTER_WITH_SPACES_PATTERN.sub(_collapse_match, text)
     text = re.sub(r"\s+([,،:؛\.\?!)])", r"\1", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text
+
+
+def detect_language(text: str) -> str:
+    """Detect if text is primarily English or Farsi"""
+    if not text:
+        return config.LANGUAGE
+
+    # Count Farsi/Arabic characters
+    farsi_chars = len(re.findall(r'[\u0600-\u06FF]', text))
+    english_chars = len(re.findall(r'[a-zA-Z]', text))
+
+    if farsi_chars > english_chars:
+        return "fa"
+    elif english_chars > farsi_chars:
+        return "en"
+    else:
+        return config.LANGUAGE  # fallback to config
+
+
+def normalize_english(text: str) -> str:
+    """Normalize English text"""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\s+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.strip()
+
+
+def normalize_text(text: str, lang: str = None) -> str:
+    """Normalize text based on language"""
+    if not text:
+        return ""
+
+    if lang is None:
+        lang = detect_language(text)
+
+    if lang == "fa":
+        return normalize_persian(text)
+    else:
+        return normalize_english(text)

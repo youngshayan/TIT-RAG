@@ -15,43 +15,89 @@ from app import config
 logger = logging.getLogger("rag.retrieval")
 
 # ----------------------------------------------------
-
-# ----------------------------------------------------
 _AVALAI_API_KEY = getattr(config, "AVALAI_API_KEY", "")
 _AVALAI_BASE_URL = getattr(config, "AVALAI_BASE_URL", "https://api.avalai.ir/v1")
 _AVALAI_RERANK_MODEL = getattr(config, "AVALAI_RERANK_MODEL", "cohere.rerank-v3-5:0")
 _USE_AVALAI_RERANK = bool(getattr(config, "USE_AVALAI_RERANK", True))
 
 _LOCAL_HYBRID_CAND_K = int(getattr(config, "LOCAL_HYBRID_CAND_K", 60))
-_LOCAL_HYBRID_TOP_K  = int(getattr(config, "LOCAL_HYBRID_TOP_K", 20))
+_LOCAL_HYBRID_TOP_K = int(getattr(config, "LOCAL_HYBRID_TOP_K", 20))
 _W_BM25 = float(getattr(config, "HYBRID_W_BM25", 0.6))
 _W_TFIDF = float(getattr(config, "HYBRID_W_TFIDF", 0.4))
 
-# چند جلسهٔ اخیر را در رم نگه می‌داریم (sid -> set(doc_id))
 _SESSION_USED_DOCS: Dict[str, Set[int]] = {}
+
+# ----------------------------------------------------
+# System Prompts based on language
+# ----------------------------------------------------
+if config.LANGUAGE == "en":
+    RAG_SYSTEM = (
+            "You are a legal assistant. Answer only based on the provided texts. "
+            "If the answer is not definitive or there is insufficient evidence, honestly say 'I don't know'. "
+            "At the end of the response, provide sources with file names and metadata. "
+            + config.DISCLAIMER
+    )
+    CONFLICT_SYSTEM = (
+        "You are a legal compliance analyst. Task: detect 'explicit conflict' or 'potential conflict' "
+        "between new text and existing texts. Judge based only on the two texts. "
+        "If no conflict, clearly say none. Output in JSON."
+    )
+    JUDGE_SYSTEM = (
+        "Legal text conflict judge. Based only on the two texts, determine if there is a conflict. "
+        "If there is a conflict, point to the exact conflicting sections and give a brief explanation."
+    )
+    SUMMARIZE_SYSTEM = "Legal summarizer. List key points, scope, exceptions, and important articles."
+else:
+    RAG_SYSTEM = (
+            "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس متون ارائه‌شده پاسخ بده. "
+            "اگر پاسخ قطعی نیست یا مدرک کافی نیست صادقانه بگو «اطلاعی ندارم». "
+            "در پایان پاسخ، منابع را با نام فایل و متادیتا ارائه کن. "
+            + config.DISCLAIMER
+    )
+    CONFLICT_SYSTEM = (
+        "تو یک تحلیلگر تطبیق حقوقی بانکی هستی. مأموریت: تشخیص «تعارض صریح» یا «تعارض محتمل» بین متن جدید و متون موجود. "
+        "صرفاً بر اساس دو متن قضاوت کن. اگر تعارضی نیست، واضح بگو نیست. خروجی را JSON برگردان."
+    )
+    JUDGE_SYSTEM = (
+        "قاضی تعارض متون حقوقی. فقط بر اساس دو متن، مشخص کن تعارض (مغایرت) وجود دارد یا خیر. "
+        "اگر تعارض هست، بند یا ماده متعارض را دقیق نشان بده و توضیح کوتاه بده."
+    )
+    SUMMARIZE_SYSTEM = "خلاصه‌ساز حقوقی فارسی. نکات کلیدی، دامنه اجرا، استثناها و مواد مهم را فهرست‌وار بده."
 
 # ----------------------------------------------------
 # UTILs
 # ----------------------------------------------------
+if config.LANGUAGE == "en":
+    _STOPWORDS = {
+        "a", "an", "the", "and", "or", "but", "for", "to", "of", "in", "on", "at", "by", "from", "with", "as",
+        "is", "are", "was", "were", "be", "been", "being", "this", "that", "these", "those", "it", "its", "their",
+        "there",
+        "can", "could", "should", "would", "may", "might", "must", "shall", "will", "do", "does", "did",
+        "have", "has", "had", "than", "then", "hence", "thus", "hence", "accordingly", "consequently",
+        "so", "nor", "yet", "also", "etc", "e.g", "i.e", "et al", "etc."
+    }
+else:
+    _STOPWORDS = {
+        "از", "با", "به", "در", "و", "را", "که", "برای", "یا", "تا", "این", "آن", "بین", "بر", "طبق", "طبقِ",
+        "می", "های", "خواهند", "خواهد", "کرد", "شود", "شده", "بود", "بودن", "نیست", "است", "هست", "هم", "اما",
+        "همچنین", "بنابراین", "باید", "نباید", "اگر", "اگرچه", "مثل", "مانند", "کلیه", "کلاً", "کل", "هر", "هیچ",
+        "پس", "قبل", "بعد", "ضمن", "بدون", "برابر", "مطابق", "موضوع", "تبصره", "ماده", "مواد", "پیوست", "پیوست‌ها",
+        "صرفاً", "صرفا", "حداکثر", "حداقل", "اعم", "غیر", "تمامی", "کلیهٔ", "آن‌ها", "آنها", "ایشان",
+    }
+
 _FA_EN_TOKEN_RE = re.compile(r"[0-9A-Za-z\u0600-\u06FF]+", re.UNICODE)
-_FA_EN_STOP = {
-    "از","با","به","در","و","را","که","برای","یا","تا","این","آن","بین","بر","طبق","می","های",
-    "خواهد","خواهند","کرد","شود","شده","بود","هست","نیست","است","هم","اما","بنابراین","اگر",
-    "مثل","مانند","هر","هیچ","قبل","بعد","بدون","موضوع","تبصره","ماده","مواد","پیوست","صرفاً","حداکثر",
-    "حداقل","اعم","تمامی","آنها","آن‌ها","ایشان","the","a","an","and","or","but","for","to","of",
-    "in","on","at","by","from","with","as","is","are","was","were","be","been","being","this","that",
-    "these","those","it","its","their","there","can","could","should","would","may","might","must",
-    "shall","will","do","does","did"
-}
+
 
 def _tokenize(text: str) -> List[str]:
     if not text:
         return []
     toks = [t.lower() for t in _FA_EN_TOKEN_RE.findall(text)]
-    return [t for t in toks if t not in _FA_EN_STOP and len(t) >= 2]
+    return [t for t in toks if t not in _STOPWORDS and len(t) >= 2]
+
 
 def _preprocess_for_bm25(text: str) -> List[str]:
     return _tokenize(text or "")
+
 
 def _normalize_scores(xs: List[float]) -> List[float]:
     if not xs:
@@ -69,10 +115,6 @@ def _normalize_scores(xs: List[float]) -> List[float]:
 class AvalAIService:
     @staticmethod
     def rerank_documents(query: str, documents: List[str], top_k: int) -> List[int]:
-        """
-        ورودی: query و لیستی از متن اسناد (strings)
-        خروجی: فهرست ایندکس‌های اسناد به ترتیب رِرَنک‌شده (0-based)
-        """
         if not _USE_AVALAI_RERANK or not _AVALAI_API_KEY or not documents:
             return list(range(min(top_k, len(documents))))
 
@@ -105,33 +147,37 @@ class AvalAIService:
 
 
 # ----------------------------------------------------
-# RAG System Prompt
+# Summarize with language support
 # ----------------------------------------------------
-RAG_SYSTEM = (
-    "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس متون ارائه‌شده پاسخ بده. "
-    "اگر پاسخ قطعی نیست یا مدرک کافی نیست صادقانه بگو «اطلاعی ندارم». "
-    "در پایان پاسخ، منابع را با نام فایل و متادیتا ارائه کن. "
-    + config.DISCLAIMER
-)
-
 def summarize_text(chatter: ChatClient, text: str, extracted_meta: Dict[str, Any]) -> str:
-    sys = "خلاصه‌ساز حقوقی فارسی. نکات کلیدی، دامنه اجرا، استثناها و مواد مهم را فهرست‌وار بده."
+    sys = SUMMARIZE_SYSTEM
+
     meta_str = ""
     if extracted_meta:
-        issuer = extracted_meta.get("issuer") or ""
-        number = extracted_meta.get("number") or ""
-        date = extracted_meta.get("issue_date") or extracted_meta.get("effective_date") or ""
-        meta_str = f"\n\n[متادیتا: صادرکننده={issuer} | شماره={number} | تاریخ={date}]"
+        if config.LANGUAGE == "en":
+            issuer = extracted_meta.get("issuer") or ""
+            number = extracted_meta.get("number") or ""
+            date = extracted_meta.get("issue_date") or extracted_meta.get("effective_date") or ""
+            meta_str = f"\n\n[Metadata: Issuer={issuer} | Number={number} | Date={date}]"
+        else:
+            issuer = extracted_meta.get("issuer") or ""
+            number = extracted_meta.get("number") or ""
+            date = extracted_meta.get("issue_date") or extracted_meta.get("effective_date") or ""
+            meta_str = f"\n\n[متادیتا: صادرکننده={issuer} | شماره={number} | تاریخ={date}]"
 
     max_chars = int(getattr(config, "SUMMARY_MAX_CHARS", 8000))
     safe_text = (text or "")[:max_chars]
 
-    user = f"این متن را خلاصه کن، شفاف و دقیق:\n\n{safe_text}{meta_str}"
+    if config.LANGUAGE == "en":
+        user = f"Summarize this text, clearly and accurately:\n\n{safe_text}{meta_str}"
+    else:
+        user = f"این متن را خلاصه کن، شفاف و دقیق:\n\n{safe_text}{meta_str}"
+
     return chatter.chat(system=sys, user=user)
 
 
 # ----------------------------------------------------
-
+# Local Hybrid Rank
 # ----------------------------------------------------
 _HAS_SKLEARN = True
 _HAS_BM25 = True
@@ -140,49 +186,44 @@ try:
     from sklearn.metrics.pairwise import cosine_similarity
 except Exception:
     _HAS_SKLEARN = False
-    logger.warning("[RETR] scikit-learn در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
+    logger.warning("[RETR] scikit-learn not available; Local Hybrid disabled.")
 try:
     from rank_bm25 import BM25Okapi
 except Exception:
     _HAS_BM25 = False
-    logger.warning("[RETR] rank-bm25 در دسترس نیست؛ Hybrid محلی غیرفعال شد.")
+    logger.warning("[RETR] rank-bm25 not available; Local Hybrid disabled.")
 
 
 def _local_hybrid_rank(query: str, texts: List[str]) -> List[int]:
-
     n = len(texts)
     if n == 0:
         return []
     if not (_HAS_SKLEARN and _HAS_BM25):
-        return list(range(n))  # بدون تغییر
+        return list(range(n))
 
-    # BM25
     tokenized_docs = [_preprocess_for_bm25(t) for t in texts]
     bm25 = BM25Okapi(tokenized_docs)
     bm25_scores = bm25.get_scores(_preprocess_for_bm25(query)).tolist()
     bm25_norm = _normalize_scores(bm25_scores)
 
-    # TF-IDF
     tf = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), analyzer="word")
     tf_mat = tf.fit_transform(texts)
     q_vec = tf.transform([query])
     sim = cosine_similarity(q_vec, tf_mat).flatten().tolist()
     tfidf_norm = _normalize_scores(sim)
 
-    # Hybrid
     hybrid = [(_W_BM25 * bm25_norm[i] + _W_TFIDF * tfidf_norm[i], i) for i in range(n)]
     hybrid.sort(key=lambda x: -x[0])
     return [i for (_score, i) in hybrid]
 
 
 # ----------------------------------------------------
-
+# Rerank pairs
 # ----------------------------------------------------
-def _rerank_pairs(query: str, candidates: List[Tuple[int, float, str]], store: Store, top_n: int) -> List[Tuple[int, float, str]]:
-
+def _rerank_pairs(query: str, candidates: List[Tuple[int, float, str]], store: Store, top_n: int) -> List[
+    Tuple[int, float, str]]:
     if not candidates:
         return []
-
 
     pool = candidates[:max(top_n * 5, _LOCAL_HYBRID_CAND_K)]
 
@@ -198,25 +239,19 @@ def _rerank_pairs(query: str, candidates: List[Tuple[int, float, str]], store: S
     if not rows:
         return []
 
-
     order_local = _local_hybrid_rank(query, texts)
     k1 = min(len(order_local), max(top_n * 2, _LOCAL_HYBRID_TOP_K))
     order_local_top = order_local[:k1]
 
-
     texts_top = [texts[i] for i in order_local_top]
-
     order_final_local_idx = AvalAIService.rerank_documents(query, texts_top, top_k=k1)
-
     final_rows_indices = [order_local_top[i] for i in order_final_local_idx if 0 <= i < k1]
-
-
     final_rows = [rows[i] for i in final_rows_indices][:top_n]
     return final_rows
 
 
 # ----------------------------------------------------
-
+# Helper
 # ----------------------------------------------------
 def _pick_segments_evenly(chunks: List[Any], limit: int) -> List[str]:
     clean = []
@@ -234,13 +269,16 @@ def _pick_segments_evenly(chunks: List[Any], limit: int) -> List[str]:
     return picked[:limit]
 
 
+# ----------------------------------------------------
+# Find Conflicts
+# ----------------------------------------------------
 def find_conflicts_against_index(
-    store: Store,
-    chatter: ChatClient,
-    uploaded_chunks: List[Any],
-    uploaded_meta: Dict[str, Any],
-    per_chunk_candidates: int = None,
-    final_k: int = None
+        store: Store,
+        chatter: ChatClient,
+        uploaded_chunks: List[Any],
+        uploaded_meta: Dict[str, Any],
+        per_chunk_candidates: int = None,
+        final_k: int = None
 ) -> List[Dict[str, Any]]:
     max_segments = int(getattr(config, "ANALYZE_MAX_SEGMENTS", 6))
     per_chunk_candidates = int(per_chunk_candidates or getattr(config, "PER_CHUNK_CANDIDATES", 2))
@@ -254,11 +292,9 @@ def find_conflicts_against_index(
     collected: List[Tuple[int, float, str]] = []
     for seg_text in candidate_segments:
         hits = store.search_hybrid(seg_text, vec_k=config.VEC_K, bm25_k=config.BM25_K)
-
         hits = _rerank_pairs(seg_text, hits, store, per_chunk_candidates)
         collected.extend(hits)
 
-    # dedupe by chunk_id
     best_map: Dict[int, Tuple[float, str]] = {}
     for cid, sc, tag in collected:
         if cid not in best_map or sc > best_map[cid][0]:
@@ -266,11 +302,6 @@ def find_conflicts_against_index(
 
     top_all = sorted([(cid, sc, tag) for cid, (sc, tag) in best_map.items()],
                      key=lambda x: -x[1])[:final_k_conf]
-
-    judge_sys = (
-        "قاضی تعارض متون حقوقی. فقط بر اساس دو متن، مشخص کن تعارض (مغایرت) وجود دارد یا خیر. "
-        "اگر تعارض هست، بند یا ماده متعارض را دقیق نشان بده و توضیح کوتاه بده."
-    )
 
     uploaded_piece = candidate_segments[0] if candidate_segments else ""
 
@@ -285,17 +316,30 @@ def find_conflicts_against_index(
         except Exception:
             doc_meta = {}
 
-        user_prompt = (
-            "متن اول (از سند آپلودی کاربر):\n"
-            f"{uploaded_piece[:4000]}\n\n"
-            "متن دوم (از پایگاه موجود):\n"
-            f"{(ch.text or '')[:4000]}\n\n"
-            "خروجی مطلوب:\n"
-            "- تعارض: بله/خیر\n"
-            "- توضیح کوتاه: چرا\n"
-            "- اگر بله: اشاره دقیق به بخش‌های متعارض (کلمات/بندها)\n"
-        )
-        verdict = chatter.chat(system=judge_sys, user=user_prompt)
+        if config.LANGUAGE == "en":
+            user_prompt = (
+                "First text (from uploaded document):\n"
+                f"{uploaded_piece[:4000]}\n\n"
+                "Second text (from existing database):\n"
+                f"{(ch.text or '')[:4000]}\n\n"
+                "Desired output:\n"
+                "- Conflict: Yes/No\n"
+                "- Brief explanation: Why\n"
+                "- If yes: Point to conflicting sections (words/clauses)\n"
+            )
+        else:
+            user_prompt = (
+                "متن اول (از سند آپلودی کاربر):\n"
+                f"{uploaded_piece[:4000]}\n\n"
+                "متن دوم (از پایگاه موجود):\n"
+                f"{(ch.text or '')[:4000]}\n\n"
+                "خروجی مطلوب:\n"
+                "- تعارض: بله/خیر\n"
+                "- توضیح کوتاه: چرا\n"
+                "- اگر بله: اشاره دقیق به بخش‌های متعارض (کلمات/بندها)\n"
+            )
+
+        verdict = chatter.chat(system=JUDGE_SYSTEM, user=user_prompt)
 
         out.append({
             "db_doc": {
@@ -319,20 +363,18 @@ def find_conflicts_against_index(
 
 
 # ----------------------------------------------------
-
+# Answer with Context
 # ----------------------------------------------------
 def answer_with_context(
-    store: Store,
-    chatter: ChatClient,
-    question: str,
-    top_k: int = 6,
-    sid: Optional[str] = None,
+        store: Store,
+        chatter: ChatClient,
+        question: str,
+        top_k: int = 6,
+        sid: Optional[str] = None,
 ) -> Dict[str, Any]:
-
     used_doc_ids_session: Set[int] = set()
     if sid:
         used_doc_ids_session = _SESSION_USED_DOCS.get(sid, set())
-
 
     first_candidates = store.search_hybrid(
         query=question,
@@ -343,15 +385,13 @@ def answer_with_context(
     )
     reranked = _rerank_pairs(question, first_candidates, store, top_k)
 
-    # اگر هیچ چیز نبود
     if not reranked:
         return {
-            "answer": "سندی مرتبط پیدا نشد.",
+            "answer": "No relevant documents found." if config.LANGUAGE == "en" else "سندی مرتبط پیدا نشد.",
             "citations": [],
             "used_doc_ids": list(used_doc_ids_session),
         }
 
-    # ساخت شواهد و استنادها
     context_snippets: List[str] = []
     citations: List[Dict[str, Any]] = []
     new_used_doc_ids: Set[int] = set(used_doc_ids_session)
@@ -370,7 +410,6 @@ def answer_with_context(
         context_snippets.append(f"■ {snippet[:700]}")
         if doc:
             new_used_doc_ids.add(ch.doc_id)
-            # تنها یک استناد از هر سند
             if not any(c.get("doc_id") == ch.doc_id for c in citations):
                 citations.append({
                     "doc_id": ch.doc_id,
@@ -381,20 +420,18 @@ def answer_with_context(
                     "method": tag
                 })
 
-    # تماس با LLM
-    system_msg = (
-        "تو یک دستیار حقوقی بانکی فارسی هستی. فقط بر اساس شواهد زیر پاسخ بده. "
-        "اگر اطلاعات کافی نیست، بگو «اطلاعی ندارم» یا «نیازمند سند بیشتر است». "
-        "از حدس زدن خودداری کن. پاسخ را شفاف و منظم ارائه بده.\n" + config.DISCLAIMER
-    )
     user_msg = (
-        f"پرسش:\n{question}\n\n"
-        "شواهد مرتبط (گزیده):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
-        "فقط با تکیه بر همین شواهد پاسخ بده."
+            f"Question:\n{question}\n\n"
+            "Relevant evidence (excerpts):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
+                                                                                      "Answer based only on this evidence."
+    ) if config.LANGUAGE == "en" else (
+            f"پرسش:\n{question}\n\n"
+            "شواهد مرتبط (گزیده):\n" + "\n".join(context_snippets[:top_k]) + "\n\n"
+                                                                             "فقط با تکیه بر همین شواهد پاسخ بده."
     )
-    answer = chatter.chat(system=system_msg, user=user_msg)
 
-    # به‌روزرسانی حافظهٔ جلسه
+    answer = chatter.chat(system=RAG_SYSTEM, user=user_msg)
+
     if sid:
         _SESSION_USED_DOCS[sid] = new_used_doc_ids
 

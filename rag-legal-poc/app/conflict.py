@@ -1,3 +1,4 @@
+# app/conflict.py
 from __future__ import annotations
 from typing import Dict, List
 from app.store import Store
@@ -5,12 +6,31 @@ from app.llm import ChatClient
 from app import config
 import json
 
-CONFLICT_SYSTEM = (
-    "تو یک تحلیلگر تطبیق حقوقی بانکی هستی. مأموریت: تشخیص «تعارض صریح» یا «تعارض محتمل» بین متن جدید و متون موجود. "
-    "صرفاً بر اساس دو متن قضاوت کن. اگر تعارضی نیست، واضح بگو نیست. خروجی را JSON برگردان."
-)
+if config.LANGUAGE == "en":
+    CONFLICT_SYSTEM = (
+        "You are a legal compliance analyst. Task: detect 'explicit conflict' or 'potential conflict' "
+        "between new text and existing texts. Judge based only on the two texts. "
+        "If no conflict, clearly say none. Output in JSON."
+    )
+    CONFLICT_USER_TMPL = """New text:
+{new_text}
 
-CONFLICT_USER_TMPL = """متن جدید:
+Existing text:
+{old_text}
+
+Output JSON with the following keys:
+has_conflict: true/false
+conflict_type: "explicit" | "potential" | "none"
+evidence_new: short quote from new text (if conflict exists)
+evidence_old: short quote from old text (if conflict exists)
+explanation: brief and precise explanation
+"""
+else:
+    CONFLICT_SYSTEM = (
+        "تو یک تحلیلگر تطبیق حقوقی بانکی هستی. مأموریت: تشخیص «تعارض صریح» یا «تعارض محتمل» بین متن جدید و متون موجود. "
+        "صرفاً بر اساس دو متن قضاوت کن. اگر تعارضی نیست، واضح بگو نیست. خروجی را JSON برگردان."
+    )
+    CONFLICT_USER_TMPL = """متن جدید:
 {new_text}
 
 متن موجود:

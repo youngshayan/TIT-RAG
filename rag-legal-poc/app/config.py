@@ -40,18 +40,71 @@ RERANKER_ENABLE = os.getenv("RERANKER_ENABLE", "true").lower() in {"1","true","y
 # --- Admin / Categories / Email ---
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme-admin-token")
 
-CATEGORIES = [
-    "قوانین و مقررات",
-    "آیین‌نامه‌ها",
-    "دستورالعمل‌ها",
-    "بخشنامه‌ها",
-]
+# -------------------- Language Settings --------------------
+LANGUAGE = os.getenv("LANGUAGE", "fa")  # "fa" or "en"
+
+# Category names based on language
+if LANGUAGE == "en":
+    CATEGORIES = [
+        "Laws and Regulations",
+        "Bylaws",
+        "Guidelines",
+        "Circulars",
+    ]
+else:
+    CATEGORIES = [
+        "قوانین و مقررات",
+        "آیین‌نامه‌ها",
+        "دستورالعمل‌ها",
+        "بخشنامه‌ها",
+    ]
+
+# Stopwords for each language
+if LANGUAGE == "en":
+    STOPWORDS = {
+        "a","an","the","and","or","but","for","to","of","in","on","at","by","from","with","as",
+        "is","are","was","were","be","been","being","this","that","these","those","it","its","their","there",
+        "can","could","should","would","may","might","must","shall","will","do","does","did",
+        "have","has","had","than","then","hence","thus","hence","accordingly","consequently",
+        "so","nor","yet","also","etc","e.g","i.e","et al","etc."
+    }
+else:
+    STOPWORDS = {
+        "از","با","به","در","و","را","که","برای","یا","تا","این","آن","بین","بر","طبق","طبقِ",
+        "می","های","خواهند","خواهد","کرد","شود","شده","بود","بودن","نیست","است","هست","هم","اما",
+        "همچنین","بنابراین","باید","نباید","اگر","اگرچه","مثل","مانند","کلیه","کلاً","کل","هر","هیچ",
+        "پس","قبل","بعد","ضمن","بدون","برابر","مطابق","موضوع","تبصره","ماده","مواد","پیوست","پیوست‌ها",
+        "صرفاً","صرفا","حداکثر","حداقل","اعم","غیر","تمامی","کلیهٔ","آن‌ها","آنها","ایشان",
+    }
+
+# System prompts based on language
+SYSTEM_PROMPTS = {
+    "fa": {
+        "classify": "شما یک دسته‌بند اسناد حقوقی بانکی هستید. فقط یکی از برچسب‌های خواسته‌شده را خروجی بده.",
+        "summarize": "خلاصه‌ساز حقوقی. نکات کلیدی، دامنه اجرا، استثناها و مواد مهم را فهرست‌وار بده.",
+        "conflict": "تو یک تحلیلگر تطبیق حقوقی هستی. مأموریت: تشخیص «تعارض صریح» یا «تعارض محتمل» بین متن جدید و متون موجود. صرفاً بر اساس دو متن قضاوت کن. اگر تعارضی نیست، واضح بگو نیست. خروجی را JSON برگردان.",
+        "rag": "تو یک دستیار حقوقی هستی. فقط بر اساس متون ارائه‌شده پاسخ بده. اگر پاسخ قطعی نیست یا مدرک کافی نیست صادقانه بگو «اطلاعی ندارم». در پایان پاسخ، منابع را با نام فایل و متادیتا ارائه کن.",
+        "conflict_judge": "قاضی تعارض متون حقوقی. فقط بر اساس دو متن، مشخص کن تعارض (مغایرت) وجود دارد یا خیر. اگر تعارض هست، بند یا ماده متعارض را دقیق نشان بده و توضیح کوتاه بده."
+    },
+    "en": {
+        "classify": "You are a banking legal document classifier. Output only one of the requested labels.",
+        "summarize": "Legal summarizer. List key points, scope, exceptions, and important articles.",
+        "conflict": "You are a legal compliance analyst. Task: detect 'explicit conflict' or 'potential conflict' between new text and existing texts. Judge based only on the two texts. If no conflict, clearly say none. Output in JSON.",
+        "rag": "You are a legal assistant. Answer only based on the provided texts. If the answer is not definitive or there is insufficient evidence, honestly say 'I don't know'. At the end of the response, provide sources with file names and metadata.",
+        "conflict_judge": "Legal text conflict judge. Based only on the two texts, determine if there is a conflict. If there is a conflict, point to the exact conflicting sections and give a brief explanation."
+    }
+}
 
 CATEGORY_RECIPIENTS = {
     "قوانین و مقررات": os.getenv("CAT_RECIP_LAW", ""),
     "آیین‌نامه‌ها": os.getenv("CAT_RECIP_BYLAW", ""),
     "دستورالعمل‌ها": os.getenv("CAT_RECIP_GUIDE", ""),
     "بخشنامه‌ها": os.getenv("CAT_RECIP_CIRCULAR", ""),
+    # English categories (fallback)
+    "Laws and Regulations": os.getenv("CAT_RECIP_LAW", ""),
+    "Bylaws": os.getenv("CAT_RECIP_BYLAW", ""),
+    "Guidelines": os.getenv("CAT_RECIP_GUIDE", ""),
+    "Circulars": os.getenv("CAT_RECIP_CIRCULAR", ""),
 }
 
 SMTP_HOST = os.getenv("SMTP_HOST", "")
@@ -76,37 +129,24 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
 LLM_MAX_TOKENS  = int(os.getenv("LLM_MAX_TOKENS", "1200"))
 LLM_TIMEOUT_SEC = float(os.getenv("LLM_TIMEOUT_SEC", "40"))
 
-
 # --- BM25 (sparse) storage + knobs ---
 BM25_CORPUS_PATH = DATA_DIR / "bm25_corpus.jsonl"
 BM25_INDEX_PATH  = DATA_DIR / "bm25_index.pkl"
-# تنظیمات قابل‌تیون برای BM25
 BM25_MIN_DF       = int(os.getenv("BM25_MIN_DF", "1"))
 BM25_MAX_FEATURES = int(os.getenv("BM25_MAX_FEATURES", "250000"))
-
 BM25_NGRAM        = (1, 2)
-
 
 # ---------------- Email / SMTP (Gmail) ----------------
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "mindsol2025@gmail.com")  # yourgmail@gmail.com
-SMTP_PASS = os.getenv("SMTP_PASS", "jmnnnlgxbhqeecla")  # 16-char App Password
+SMTP_USER = os.getenv("SMTP_USER", "mindsol2025@gmail.com")
+SMTP_PASS = os.getenv("SMTP_PASS", "jmnnnlgxbhqeecla")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER or "no-reply@example.com")
-
-CATEGORY_RECIPIENTS = {
-    "قوانین و مقررات": os.getenv("CAT_RECIP_LAW", "shayan2248@gmail.com"),
-    "آیین‌نامه‌ها":    os.getenv("CAT_RECIP_BYLAW", "pofhaze@gmail.com"),
-    "دستورالعمل‌ها":   os.getenv("CAT_RECIP_GUIDE", "theyoungshayan@gmail.com"),
-    "بخشنامه‌ها":      os.getenv("CAT_RECIP_CIRCULAR", "team-circular@example.com"),
-}
-
 
 # --- Admin post-actions ---
 ADMIN_INLINE_INDEX = True
 RUN_INGEST_FOR_NEW_FILES = False
 RUN_REEMBED_AFTER_ADMIN = False
-
 
 AVALAI_API_KEY = "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL"
 AVALAI_BASE_URL = "https://api.avalai.ir/v1"
@@ -117,11 +157,8 @@ LOCAL_HYBRID_TOP_K = 20
 HYBRID_W_BM25 = 0.6
 HYBRID_W_TFIDF = 0.4
 
-
 CHUNK_TOKENS = 650
 CHUNK_OVERLAP = 90
-
-
 
 DOC_FAISS_INDEX_PATH = DATA_DIR / "faiss_doc.index"
 DOC_FAISS_MAP_PATH   = DATA_DIR / "faiss_doc_map.json"
