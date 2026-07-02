@@ -122,7 +122,7 @@ GPT4O_MODEL   = os.getenv("GPT4O_MODEL",   "GPT-4o-mini")
 # Backup: DeepSeek Chat V3 via ArvanCloud
 DEEPSEEK_ENDPOINT = os.getenv("DEEPSEEK_ENDPOINT", "https://api.avalai.ir/v1")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL")
-DEEPSEEK_MODEL   = os.getenv("DEEPSEEK_MODEL",   "gpt-4.1")
+DEEPSEEK_MODEL   = os.getenv("DEEPSEEK_MODEL",   "gpt-5.4-pro")
 
 # LLM runtime knobs
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
@@ -148,9 +148,9 @@ ADMIN_INLINE_INDEX = True
 RUN_INGEST_FOR_NEW_FILES = False
 RUN_REEMBED_AFTER_ADMIN = False
 
-AVALAI_API_KEY = "aa-sVt6V9D4o6dloCd1I4wEk95txDJejZ81t7clBAjZrJQ5CoLL"
+AVALAI_API_KEY = "aa-fF6sbbBUZHcig4H3ASLtfI2ABn4BGGaLExEZZmYbS67LrPCx"
 AVALAI_BASE_URL = "https://api.avalai.ir/v1"
-AVALAI_RERANK_MODEL = "cohere.rerank-v3-5:0"
+AVALAI_RERANK_MODEL = "cohere-rerank-v4.0-pro"
 USE_AVALAI_RERANK = True
 LOCAL_HYBRID_CAND_K = 60
 LOCAL_HYBRID_TOP_K = 20
